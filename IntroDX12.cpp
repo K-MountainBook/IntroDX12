@@ -83,6 +83,8 @@ int main() {
 		return -1;
 	}
 
+	auto result = CreateDXGIFactory1(IID_PPV_ARGS(&_dxgiFactory));
+
 	result = _dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_cmdAllocator));
 	if (result != S_OK) {
 		return -1;
