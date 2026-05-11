@@ -1,10 +1,16 @@
-﻿#include <Windows.h>
+﻿
 #include <tchar.h>
+#include <vector>
 
 // DirectX12 headers
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <DirectXMath.h>
+
+#ifdef _DEBUG
+#include <iostream>
+#endif
+
 
 // Static library linking
 #pragma comment(lib, "d3d12.lib")
@@ -16,14 +22,12 @@ using namespace DirectX;
 ID3D12Device* _dev = nullptr;
 IDXGIFactory6* _dxgiFactory = nullptr;
 IDXGISwapChain4* _swapChain = nullptr;
-
-// D3Dの機能レベルの配列	
-D3D_FEATURE_LEVEL levels[] = {
-	D3D_FEATURE_LEVEL_12_1,
-	D3D_FEATURE_LEVEL_12_0,
-	D3D_FEATURE_LEVEL_11_1,
-	D3D_FEATURE_LEVEL_11_0,
-};
+// コマンドアロケータ
+ID3D12CommandAllocator* _cmdAllocator = nullptr;
+// コマンドリスト
+ID3D12GraphicsCommandList* _cmdList = nullptr;
+// コマンドキュー
+ID3D12CommandQueue* _cmdQueue = nullptr;
 
 XMFLOAT3 verticles[3] = {
 	{-1.0f, -1.0f, 0.0f},
@@ -31,16 +35,19 @@ XMFLOAT3 verticles[3] = {
 	{1.0f, -1.0f, 0.0f}
 }; //頂点3個
 
-// コマンドアロケータ
-ID3D12CommandAllocator* _cmdAllocator = nullptr;
-// コマンドリスト
-ID3D12GraphicsCommandList* _cmdList = nullptr;	
-// コマンドキュー
-ID3D12CommandQueue* _cmdQueue = nullptr;
 
+float clearColor[] = { 1.0f, 1.0f, 0.0f, 1.0f };
 
-HRESULT result;
+void EnableDebugLayer() {
+	ID3D12Debug* debugLayer = nullptr;
+	auto result = D3D12GetDebugInterface(IID_PPV_ARGS(&debugLayer));
+	if (result == S_OK) {
+		debugLayer->EnableDebugLayer();
+		debugLayer->Release();
+	}
+}
 
+// ウィンドウプロシージャ
 LRESULT WindowProcedure(HWND hwnd, UINT msg, WPARAM wpram, LPARAM lparam) {
 	if (msg == WM_DESTROY) {
 		PostQuitMessage(0);
@@ -49,63 +56,104 @@ LRESULT WindowProcedure(HWND hwnd, UINT msg, WPARAM wpram, LPARAM lparam) {
 	return DefWindowProc(hwnd, msg, wpram, lparam);
 }
 
-int main() {
 
+#ifdef _DEBUG
+int main() {
+#else
+#include <Windows.h>
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+#endif
+	OutputDebugString(L"Show window test.");
 	// ウィンドウの生成
 	WNDCLASSEX w = {};
 
 	w.cbSize = sizeof(WNDCLASSEX);
 	w.lpfnWndProc = (WNDPROC)WindowProcedure;
 	w.lpszClassName = _T("DX12Sample");
-	w.hInstance = GetModuleHandle(nullptr);
-
+	w.hInstance = GetModuleHandle(0);
 	RegisterClassEx(&w);
 
 	RECT wrc = { 0, 0, 1280, 720 };
+	AdjustWindowRect(&wrc, WS_OVERLAPPEDWINDOW, false);
+	//　ウィンドウの生成	
+	HWND hwnd = CreateWindow(
+		w.lpszClassName,
+		_T("DX12Test"),
+		WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		wrc.right - wrc.left,
+		wrc.bottom - wrc.top,
+		nullptr,
+		nullptr,
+		w.hInstance,
+		nullptr);
 
-	AdjustWindowRect(&wrc, WS_OVERLAPPEDWINDOW, FALSE);
 
-	HWND hwnd = CreateWindow(w.lpszClassName, _T("DX12Test"), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, wrc.right - wrc.left, wrc.bottom - wrc.top, nullptr, nullptr, w.hInstance, nullptr);
+#ifdef _DEBUG
+	EnableDebugLayer();
+#endif
 
-	ShowWindow(hwnd, SW_SHOW);
+	// D3Dの機能レベルの配列	
+	D3D_FEATURE_LEVEL levels[] = {
+		D3D_FEATURE_LEVEL_12_1,
+		D3D_FEATURE_LEVEL_12_0,
+		D3D_FEATURE_LEVEL_11_1,
+		D3D_FEATURE_LEVEL_11_0,
+	};
 
 
+#ifdef _DEBUG
+	auto result = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_dxgiFactory));
+#else 
+	auto result = CreateDXGIFactory1(IID_PPV_ARGS(&_dxgiFactory));
+#endif // DEBUG
+
+
+	std::vector<IDXGIAdapter*> adapters;
+	IDXGIAdapter* _tmpAdapter = nullptr;
+
+	for (int i = 0; _dxgiFactory->EnumAdapters(i, &_tmpAdapter) != DXGI_ERROR_NOT_FOUND; i++) {
+		adapters.push_back(_tmpAdapter);
+	}
+
+	for (auto adpt : adapters) {
+		DXGI_ADAPTER_DESC adesc;
+		adpt->GetDesc(&adesc);
+		std::wcout << L"video card name: " << adesc.Description << std::endl;
+
+		std::wstring strDesc = adesc.Description;
+
+		if (strDesc.find(L"NVIDIA") != std::string::npos) {
+			_tmpAdapter = adpt;
+			break;
+		}
+
+	}
+
+	//D3Dデバイスの初期化
 	D3D_FEATURE_LEVEL featureLevel;
-	for(auto lv:levels) {
-		if (D3D12CreateDevice(nullptr,lv,IID_PPV_ARGS(&_dev)) == S_OK){
+	for (auto lv : levels) {
+		if (D3D12CreateDevice(_tmpAdapter, lv, IID_PPV_ARGS(&_dev)) == S_OK) {
 			featureLevel = lv;
 			break;
 		}
 	}
-
-	// アダプタが見つからなかった場合はエラーで終了
-	if (&featureLevel == nullptr) {
-		return -1;
-	}
-
-	auto result = CreateDXGIFactory1(IID_PPV_ARGS(&_dxgiFactory));
-
+	// コマンドキューの生成
 	result = _dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_cmdAllocator));
-	if (result != S_OK) {
-		return -1;
-	}
 	result = _dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _cmdAllocator, nullptr, IID_PPV_ARGS(&_cmdList));
-	if (result != S_OK) {
-		return -1;
-	}
 
 	D3D12_COMMAND_QUEUE_DESC cmdQueueDesc = {};
 	cmdQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	cmdQueueDesc.NodeMask = 0;
 	cmdQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-
 	cmdQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-
 	result = _dev->CreateCommandQueue(&cmdQueueDesc, IID_PPV_ARGS(&_cmdQueue));
 	if (result != S_OK) {
 		return -1;
 	}
 
+	// スワップチェインの生成
 	DXGI_SWAP_CHAIN_DESC1 swapchainDesc = {};
 	swapchainDesc.Width = 1280;
 	swapchainDesc.Height = 720;
@@ -115,13 +163,9 @@ int main() {
 	swapchainDesc.SampleDesc.Quality = 0;
 	swapchainDesc.BufferUsage = DXGI_USAGE_BACK_BUFFER;
 	swapchainDesc.BufferCount = 2;
-
 	swapchainDesc.Scaling = DXGI_SCALING_STRETCH;
-
-	swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
+	swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-
 	swapchainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
 	result = _dxgiFactory->CreateSwapChainForHwnd(
@@ -131,14 +175,57 @@ int main() {
 		nullptr,
 		nullptr,
 		(IDXGISwapChain1**)&_swapChain);
+
 	if (result != S_OK) {
 		return -1;
 	}
 
+	//ディスクリプタヒープの作成
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; //レンダーターゲットビュー
+	heapDesc.NodeMask = 0;
+	heapDesc.NumDescriptors = 2; // バックバッファ数
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+
+	ID3D12DescriptorHeap* rtvHeaps = nullptr;
+	result = _dev->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&rtvHeaps));
+	if (result != S_OK) {
+		return -1;
+	}
+	// スワップチェーンとメモリの紐づけを行う
+	DXGI_SWAP_CHAIN_DESC swcDesc = {};
+
+	result = _swapChain->GetDesc(&swcDesc);
+
+	std::vector<ID3D12Resource*> _backBuffers(swcDesc.BufferCount);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+
+	for (size_t i = 0; i < swcDesc.BufferCount; ++i) {
+		result = _swapChain->GetBuffer(static_cast<UINT>(i), IID_PPV_ARGS(&_backBuffers[i]));
+
+		if (result != S_OK) {
+			return -1;
+		}
+
+		_dev->CreateRenderTargetView(_backBuffers[i], nullptr, handle);
+		handle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	}
+
+
+	// フェンスの作成
+	ID3D12Fence* _fence = nullptr;
+	UINT64 _fenceVal = 0;
+
+	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
+
+	ShowWindow(hwnd, SW_SHOW);
+
+	MSG msg = {};
+
 	// メインループの定義
 	{
-		MSG msg = {};
-
 
 		while (true) {
 			if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -149,8 +236,58 @@ int main() {
 			if (msg.message == WM_QUIT) {
 				break;
 			}
+
+			auto bbIdx = _swapChain->GetCurrentBackBufferIndex();
+
+			// リソースバリア
+			D3D12_RESOURCE_BARRIER BarrierDesc = {};
+			BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			BarrierDesc.Transition.pResource = _backBuffers[bbIdx];
+			BarrierDesc.Transition.Subresource = 0;
+			BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+			BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			_cmdList->ResourceBarrier(1, &BarrierDesc);
+
+			auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+			rtvH.ptr += static_cast<ULONG_PTR>(bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
+			_cmdList->OMSetRenderTargets(1, &rtvH, true, nullptr);
+
+			// 画面のクリア
+			_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+
+			BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+			BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+			_cmdList->ResourceBarrier(1, &BarrierDesc);
+
+			//命令のクローズ
+			_cmdList->Close();
+
+
+			ID3D12CommandList* cmdlists[] = { _cmdList };
+
+			_cmdQueue->ExecuteCommandLists(1, cmdlists);
+
+			// cmdQueueの実行完了を待つ処理
+			_cmdQueue->Signal(_fence, ++_fenceVal);
+
+			if (_fence->GetCompletedValue() != _fenceVal)
+			{
+				auto event = CreateEvent(nullptr, false, false, nullptr);
+				_fence->SetEventOnCompletion(_fenceVal, event);
+				WaitForSingleObject(event, INFINITE);
+				CloseHandle(event);
+			}
+
+			_cmdAllocator->Reset();
+			_cmdList->Reset(_cmdAllocator, nullptr);
+
+			// フリップ
+			_swapChain->Present(1, 0);
+
 		}
 	}
 	UnregisterClass(w.lpszClassName, w.hInstance);
+	return 0;
 
 }
