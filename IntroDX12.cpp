@@ -6,6 +6,8 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <DirectXMath.h>
+#include <DirectXTex.h>
+#include <d3dx12.h>
 
 #include <d3dcompiler.h>
 
@@ -18,6 +20,7 @@
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "D3DCompiler.lib")
+#pragma comment(lib, "DirectXTex.lib")
 
 using namespace DirectX;
 
@@ -42,16 +45,34 @@ XMFLOAT3 verticles[3] = {
 }; //頂点3個
 */
 
-XMFLOAT3 verticles[] = {
-	{-0.4f, -0.7f, 0.0f},
-	{-0.4f, 0.7f, 0.0f},
-	{0.4f, -0.7f, 0.0f},
-	{ 0.4f, 0.7f, 0.0f }
-}; //頂点4個
 
+//XMFLOAT3 verticles[] = {
+//	{-0.4f, -0.7f, 0.0f},
+//	{-0.4f, 0.7f, 0.0f},
+//	{0.4f, -0.7f, 0.0f},
+//	{ 0.4f, 0.7f, 0.0f }
+//}; //頂点4個
+
+
+struct Vertex
+{
+	XMFLOAT3 pos;	// xyz座標
+	XMFLOAT2 uv;	// uv座標
+};
+
+
+Vertex vertices[] = {
+	{{-0.4f, -0.7f, 0.0f},{0.0f,1.0f}},
+	{{-0.4f,  0.7f, 0.0f},{0.0f,0.0f}},
+	{{ 0.4f, -0.7f, 0.0f},{1.0f,1.0f}},
+	{{ 0.4f,  0.7f, 0.0f},{1.0f,0.0f}}
+};
 
 float clearColor[] = { 1.0f, 1.0f, 0.0f, 1.0f };
 
+/// <summary>
+/// デバッグレイヤーの有効化
+/// </summary>
 void EnableDebugLayer() {
 	ID3D12Debug* debugLayer = nullptr;
 	auto result = D3D12GetDebugInterface(IID_PPV_ARGS(&debugLayer));
@@ -72,9 +93,20 @@ LRESULT WindowProcedure(HWND hwnd, UINT msg, WPARAM wpram, LPARAM lparam) {
 
 
 #ifdef _DEBUG
+/// <summary>
+/// デバッグの場合はmain関数
+/// </summary>
 int main() {
 #else
 #include <Windows.h>
+/// <summary>
+/// リリースの場合はWinMainを呼び出す
+/// </summary>
+/// <param name=""></param>
+/// <param name=""></param>
+/// <param name=""></param>
+/// <param name=""></param>
+/// <returns></returns>
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #endif
 	OutputDebugString(L"Show window test.");
@@ -117,6 +149,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	};
 
 
+	// テクスチャの準備
+	struct TexRGBA
+	{
+		unsigned char R, G, B, A;
+	};
+
+	std::vector<TexRGBA> texturedata(256 * 256);
+
+	for (auto& rgba : texturedata)
+	{
+		rgba.R = rand() % 256;
+		rgba.G = rand() % 256;
+		rgba.B = rand() % 256;
+		rgba.A = 255;
+	}
+
 #ifdef _DEBUG
 	auto result = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_dxgiFactory));
 #else 
@@ -134,14 +182,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	for (auto adpt : adapters) {
 		DXGI_ADAPTER_DESC adesc;
 		adpt->GetDesc(&adesc);
-		std::wcout << L"video card name: " << adesc.Description << std::endl;
+		//std::wcout << L"video card name: " << adesc.Description << std::endl;
 
-		std::wstring strDesc = adesc.Description;
+		//std::wstring strDesc = adesc.Description;
 
-		if (strDesc.find(L"NVIDIA") != std::string::npos) {
-			_tmpAdapter = adpt;
-			break;
-		}
+		//if (strDesc.find(L"NVIDIA") != std::string::npos) {
+		//	_tmpAdapter = adpt;
+		//	break;
+		//}
 
 	}
 
@@ -242,10 +290,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
+
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.CreationNodeMask = 0;
+	texHeapProp.VisibleNodeMask = 0;
+
+
 	D3D12_RESOURCE_DESC resdesc = {};
 
 	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resdesc.Width = sizeof(verticles);
+	resdesc.Width = sizeof(vertices);
 	resdesc.Height = 1;
 	resdesc.DepthOrArraySize = 1;
 	resdesc.MipLevels = 1;
@@ -254,6 +311,118 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
+
+	//WICテクスチャのロード
+	TexMetadata metadata = {};
+	ScratchImage scratchImg = {};
+
+	result = LoadFromWICFile(
+		L"img/textest.png", WIC_FLAGS_NONE, &metadata, scratchImg
+	);
+
+	auto img = scratchImg.GetImage(0, 0, 0);
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	//resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	//resDesc.Width = 256;
+	//resDesc.Height = 256;
+	//resDesc.DepthOrArraySize = 1;
+	//resDesc.SampleDesc.Count = 1;
+	//resDesc.SampleDesc.Quality = 0;
+	//resDesc.MipLevels = 1;
+	//resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	//resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	//resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	resDesc.Format = metadata.format;
+	resDesc.Width = metadata.width;
+	resDesc.Height = metadata.height;
+	resDesc.DepthOrArraySize = metadata.arraySize;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = metadata.mipLevels;
+	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* texbuff = nullptr;
+	result = _dev->CreateCommittedResource(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&texbuff)
+	);
+
+	result = texbuff->WriteToSubresource(
+		0,
+		nullptr,
+		//texturedata.data(),
+		//sizeof(TexRGBA) * 256,
+		//sizeof(TexRGBA) * texturedata.size(),
+		img->pixels,
+		img->rowPitch,
+		img->slicePitch
+	);
+
+	ID3D12DescriptorHeap* basicDescHeap = nullptr;
+	D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
+
+	//descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	//descHeapDesc.NodeMask = 0;
+	//descHeapDesc.NumDescriptors = 1;
+	//descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	//result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&texDescHeap));
+
+	descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	descHeapDesc.NodeMask = 0;
+	descHeapDesc.NumDescriptors = 2;
+	descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&basicDescHeap));
+
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = metadata.format;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = 1;
+
+	// 定数バッファの作成(d3dx12.h使用)
+	ID3D12Resource* constBuff = nullptr;
+
+
+	XMMATRIX matrix = XMMatrixIdentity();
+
+	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	resDesc = CD3DX12_RESOURCE_DESC::Buffer((sizeof(matrix) + 0xff) & ~0xff);
+
+	_dev->CreateCommittedResource(
+		&heapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&constBuff)
+	);
+
+	XMMATRIX* mapMatrix;
+
+	auto basicHeapHandle = basicDescHeap->GetCPUDescriptorHandleForHeapStart();
+
+	_dev->CreateShaderResourceView(
+		texbuff,
+		&srvDesc,
+		basicHeapHandle
+	);
+
+	basicHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+	cbvDesc.BufferLocation = constBuff->GetGPUVirtualAddress();
+	cbvDesc.SizeInBytes = constBuff->GetDesc().Width;
+
+	_dev->CreateConstantBufferView(&cbvDesc, basicHeapHandle);
 
 	ID3D12Resource* vertBuff = nullptr;
 	result = _dev->CreateCommittedResource(
@@ -265,17 +434,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&vertBuff)
 	);
 
-	XMFLOAT3* vertMap = nullptr;
+	//XMFLOAT3* vertMap = nullptr;
+	Vertex* vertMap = nullptr;
 	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
 
-	std::copy(std::begin(verticles), std::end(verticles), vertMap);
+	std::copy(std::begin(vertices), std::end(vertices), vertMap);
 
 	vertBuff->Unmap(0, nullptr);
 
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
 	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
-	vbView.SizeInBytes = sizeof(verticles);
-	vbView.StrideInBytes = sizeof(verticles[0]);
+	vbView.SizeInBytes = sizeof(vertices);
+	vbView.StrideInBytes = sizeof(vertices[0]);
 
 
 	unsigned short indeces[] = {
@@ -334,11 +504,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
 		{
-		"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,
-		D3D12_APPEND_ALIGNED_ELEMENT,
-		D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
+			"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
+		},
+		{ // uv
+			"TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
 		},
 	};
+
+	result = constBuff->Map(0, nullptr, (void**)&mapMatrix);
+	*mapMatrix = matrix;
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC gpipeline = {};
 
@@ -360,8 +538,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	gpipeline.BlendState.AlphaToCoverageEnable = false;
 	gpipeline.BlendState.IndependentBlendEnable = false;
 
-	D3D12_RENDER_TARGET_BLEND_DESC
-		renderTargetBlendDesc = {};
+	D3D12_RENDER_TARGET_BLEND_DESC	renderTargetBlendDesc = {};
 	renderTargetBlendDesc.BlendEnable = false;
 	renderTargetBlendDesc.LogicOpEnable = false;
 	renderTargetBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
@@ -382,10 +559,54 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	gpipeline.SampleDesc.Quality = 0;
 
 	ID3D12RootSignature* rootsignature = nullptr;
-
 	D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
+
+	//D3D12_DESCRIPTOR_RANGE descTblRange = {};
+	//descTblRange.NumDescriptors = 1;
+	//descTblRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	//descTblRange.BaseShaderRegister = 0;
+	//descTblRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+	D3D12_DESCRIPTOR_RANGE descTblRange[2] = {};
+	descTblRange[0].NumDescriptors = 1;
+	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descTblRange[0].BaseShaderRegister = 0;
+	descTblRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+	descTblRange[1].NumDescriptors = 1;
+	descTblRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	descTblRange[1].BaseShaderRegister = 0;
+	descTblRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+	D3D12_ROOT_PARAMETER rootparam[2] = {};
+	rootparam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootparam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];
+	rootparam[0].DescriptorTable.NumDescriptorRanges = 1;
+	rootparam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+	rootparam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[1];
+	rootparam[1].DescriptorTable.NumDescriptorRanges = 1;
+	rootparam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+	rootSignatureDesc.pParameters = rootparam;
+	rootSignatureDesc.NumParameters = 2;
+
+	D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
+	samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+	samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+	samplerDesc.MinLOD = 0.0f;
+	samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+
+	rootSignatureDesc.pStaticSamplers = &samplerDesc;
+	rootSignatureDesc.NumStaticSamplers = 1;
 
 	ID3DBlob* rootSigBlob = nullptr;
 
@@ -422,8 +643,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorrect.left = 0;
 	scissorrect.right = scissorrect.left + 1280;
 	scissorrect.bottom = scissorrect.top + 720;
-
-
 
 	if (result != S_OK) {
 		return -1;
@@ -476,6 +695,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			_cmdList->RSSetViewports(1, &viewport);
 			_cmdList->RSSetScissorRects(1, &scissorrect);
 			_cmdList->SetGraphicsRootSignature(rootsignature);
+			_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
+			_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
+
+			auto heapHandle = basicDescHeap->GetGPUDescriptorHandleForHeapStart();
+			heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			_cmdList->SetGraphicsRootDescriptorTable(1, heapHandle);
+
 
 			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			_cmdList->IASetVertexBuffers(0, 1, &vbView);

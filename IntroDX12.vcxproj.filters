@@ -54,4 +54,10 @@
       <Filter>リソース ファイル</Filter>
     </FxCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="BasicShaderHeader.hlsli">
+      <Filter>リソース ファイル</Filter>
+    </None>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>
