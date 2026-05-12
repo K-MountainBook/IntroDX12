@@ -33,15 +33,21 @@ ID3D12GraphicsCommandList* _cmdList = nullptr;
 ID3D12CommandQueue* _cmdQueue = nullptr;
 
 
-ID3DBlob* _vsBlob = nullptr;
-ID3DBlob* _psBlob = nullptr;
 
-
+/*
 XMFLOAT3 verticles[3] = {
-	{-1.0f, -1.0f, 0.0f},
-	{-1.0f, 1.0f, 0.0f},
-	{1.0f, -1.0f, 0.0f}
+	{-0.5f, -0.7f, 0.0f},
+	{0.0f, 0.7f, 0.0f},
+	{0.5f, -0.7f, 0.0f}
 }; //頂点3個
+*/
+
+XMFLOAT3 verticles[] = {
+	{-0.4f, -0.7f, 0.0f},
+	{-0.4f, 0.7f, 0.0f},
+	{0.4f, -0.7f, 0.0f},
+	{ 0.4f, 0.7f, 0.0f }
+}; //頂点4個
 
 
 float clearColor[] = { 1.0f, 1.0f, 0.0f, 1.0f };
@@ -230,6 +236,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	ShowWindow(hwnd, SW_SHOW);
 
+
 	D3D12_HEAP_PROPERTIES heapprop = {};
 	heapprop.Type = D3D12_HEAP_TYPE_UPLOAD;
 	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
@@ -247,8 +254,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-	ID3D12Resource* vertBuff = nullptr;
 
+	ID3D12Resource* vertBuff = nullptr;
 	result = _dev->CreateCommittedResource(
 		&heapprop,
 		D3D12_HEAP_FLAG_NONE,
@@ -258,9 +265,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&vertBuff)
 	);
 
-
 	XMFLOAT3* vertMap = nullptr;
-
 	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
 
 	std::copy(std::begin(verticles), std::end(verticles), vertMap);
@@ -271,6 +276,39 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
 	vbView.SizeInBytes = sizeof(verticles);
 	vbView.StrideInBytes = sizeof(verticles[0]);
+
+
+	unsigned short indeces[] = {
+		0,1,2,
+		2,1,3
+	};
+
+	ID3D12Resource* idxBuff = nullptr;
+
+	resdesc.Width = sizeof(indeces);
+
+	result = _dev->CreateCommittedResource(
+		&heapprop,
+		D3D12_HEAP_FLAG_NONE,
+		&resdesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&idxBuff)
+	);
+
+
+	unsigned short* mappedIdx = nullptr;
+	idxBuff->Map(0, nullptr, (void**)&mappedIdx);
+	std::copy(std::begin(indeces), std::end(indeces), mappedIdx);
+	idxBuff->Unmap(0, nullptr);
+
+	D3D12_INDEX_BUFFER_VIEW ibView = {};
+	ibView.BufferLocation = idxBuff->GetGPUVirtualAddress();
+	ibView.Format = DXGI_FORMAT_R16_UINT;
+	ibView.SizeInBytes = sizeof(indeces);
+
+	ID3DBlob* _vsBlob = nullptr;
+	ID3DBlob* _psBlob = nullptr;
 
 	ID3DBlob* errorBlob = nullptr;
 
@@ -387,13 +425,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 
-
 	if (result != S_OK) {
 		return -1;
 	}
 
 	MSG msg = {};
-
+	unsigned int frame = 0;
 	// メインループの定義
 	{
 
@@ -417,26 +454,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			BarrierDesc.Transition.Subresource = 0;
 			BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
 			BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+
 			_cmdList->ResourceBarrier(1, &BarrierDesc);
 
+			_cmdList->SetPipelineState(_pipelinestate);
+
 			auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
-			rtvH.ptr += static_cast<ULONG_PTR>(bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
+			rtvH.ptr += bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 			_cmdList->OMSetRenderTargets(1, &rtvH, true, nullptr);
 
 			// 画面のクリア
+			float r, g, b;
+			r = (float)(0xff & frame >> 16) / 255.0f;
+			g = (float)(0xff & frame >> 8) / 255.0f;
+			b = (float)(0xff & frame >> 0) / 255.0f;
+			float clearColor[] = { r,g,b,1.0f };//黄色
 			_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+			++frame;
 
-
-			_cmdList->SetPipelineState(_pipelinestate);
-			_cmdList->SetGraphicsRootSignature(rootsignature);
 
 			_cmdList->RSSetViewports(1, &viewport);
 			_cmdList->RSSetScissorRects(1, &scissorrect);
+			_cmdList->SetGraphicsRootSignature(rootsignature);
 
 			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
 			_cmdList->IASetVertexBuffers(0, 1, &vbView);
-			_cmdList->DrawInstanced(3, 1, 0, 0);
+			_cmdList->IASetIndexBuffer(&ibView);
+
+			// _cmdList->DrawInstanced(4, 1, 0, 0);
+			_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
 			BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 			BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
