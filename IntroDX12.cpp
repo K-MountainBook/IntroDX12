@@ -291,6 +291,60 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 
+	// 深度バッファの作成
+	D3D12_RESOURCE_DESC depthResDesc = {};
+	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	depthResDesc.Width = 1280;
+	depthResDesc.Height = 780;
+	depthResDesc.DepthOrArraySize = 1;
+	depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	depthResDesc.SampleDesc.Count = 1;
+	depthResDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+	// 深度用ヒープ
+	D3D12_HEAP_PROPERTIES depthHeapProp = {};
+	depthHeapProp.Type = D3D12_HEAP_TYPE_DEFAULT;
+	depthHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	depthHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+	// クリアバリュー
+	D3D12_CLEAR_VALUE depthClearValue = {};
+	depthClearValue.DepthStencil.Depth = 1.0f;
+	depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+
+	ID3D12Resource* depthBuffer = nullptr;
+	result = _dev->CreateCommittedResource(
+		&depthHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&depthResDesc,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		&depthClearValue,
+		IID_PPV_ARGS(&depthBuffer)
+	);
+
+	// 深度用ディスクリプタヒープ
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	dsvHeapDesc.NumDescriptors = 1;
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+
+	ID3D12DescriptorHeap* dsvHeap = nullptr;
+	result = _dev->CreateDescriptorHeap(
+		&dsvHeapDesc,
+		IID_PPV_ARGS(&dsvHeap)
+	);
+
+	// 深度ビューの作成
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+	_dev->CreateDepthStencilView(
+		depthBuffer,
+		&dsvDesc,
+		dsvHeap->GetCPUDescriptorHandleForHeapStart()
+	);
+
 	// フェンスの作成
 	ID3D12Fence* _fence = nullptr;
 	UINT64 _fenceVal = 0;
@@ -299,6 +353,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	ShowWindow(hwnd, SW_SHOW);
 
+	// PMDヘッダ構造
 	struct PMDHeader {
 		float version;
 		char model_name[20];
@@ -317,15 +372,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	fread(signature, sizeof(signature), 1, fp);
 	fread(&pmdHeader, sizeof(pmdHeader), 1, fp);
 
+	// 頂点1つあたりのバッファサイズ
 	constexpr size_t pmdvertex_size = 38;
 	unsigned int vertNum;
 
+	// 頂点情報の読み込み
 	fread(&vertNum, sizeof(vertNum), 1, fp);
 
 	std::vector<unsigned char> vertices(vertNum * pmdvertex_size);
 	fread(vertices.data(), vertices.size(), 1, fp);
 
+	// インデクスデータの読み込み
+	std::vector<unsigned short> indices;
+
+	unsigned int indicesNum;
+	fread(&indicesNum, sizeof(indicesNum), 1, fp);
+	indices.resize(indicesNum);
+	fread(indices.data(), indices.size() * sizeof(indices[0]), 1, fp);
+
 	fclose(fp);
+
 
 	D3D12_HEAP_PROPERTIES heapprop = {};
 	heapprop.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -516,6 +582,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//);
 	auto heapPropVer = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	auto resoDescBuffVer = CD3DX12_RESOURCE_DESC::Buffer(vertices.size());
+
 	result = _dev->CreateCommittedResource(
 		&heapPropVer,
 		D3D12_HEAP_FLAG_NONE,
@@ -542,34 +609,46 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vbView.StrideInBytes = pmdvertex_size;
 
 
-	unsigned short indeces[] = {
-		0,1,2,
-		2,1,3
-	};
+	//unsigned short indeces[] = {
+	//	0,1,2,
+	//	2,1,3
+	//};
 
 	ID3D12Resource* idxBuff = nullptr;
 
-	resdesc.Width = sizeof(indeces);
+	// resdesc.Width = sizeof(indeces);
+
+	auto idxHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto idxResoDesc = CD3DX12_RESOURCE_DESC::Buffer(indices.size() * sizeof(indices[0]));
 
 	result = _dev->CreateCommittedResource(
-		&heapprop,
+		&idxHeapProp,
 		D3D12_HEAP_FLAG_NONE,
-		&resdesc,
+		&idxResoDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(&idxBuff)
 	);
 
+	//result = _dev->CreateCommittedResource(
+	//	&heapprop,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&resdesc,
+	//	D3D12_RESOURCE_STATE_GENERIC_READ,
+	//	nullptr,
+	//	IID_PPV_ARGS(&idxBuff)
+	//);
 
 	unsigned short* mappedIdx = nullptr;
 	idxBuff->Map(0, nullptr, (void**)&mappedIdx);
-	std::copy(std::begin(indeces), std::end(indeces), mappedIdx);
+	std::copy(std::begin(indices), std::end(indices), mappedIdx);
 	idxBuff->Unmap(0, nullptr);
 
 	D3D12_INDEX_BUFFER_VIEW ibView = {};
 	ibView.BufferLocation = idxBuff->GetGPUVirtualAddress();
 	ibView.Format = DXGI_FORMAT_R16_UINT;
-	ibView.SizeInBytes = sizeof(indeces);
+	ibView.SizeInBytes = indices.size() * sizeof(indices[0]);
+	// ibView.SizeInBytes = sizeof(indeces);
 
 	ID3DBlob* _vsBlob = nullptr;
 	ID3DBlob* _psBlob = nullptr;
@@ -671,6 +750,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	gpipeline.SampleDesc.Count = 1;
 	gpipeline.SampleDesc.Quality = 0;
+
+	gpipeline.DepthStencilState.DepthEnable = true;
+	gpipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	gpipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+
+	gpipeline.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
 	ID3D12RootSignature* rootsignature = nullptr;
 	D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
@@ -805,7 +890,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
 			rtvH.ptr += bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-			_cmdList->OMSetRenderTargets(1, &rtvH, true, nullptr);
+			auto dsvH = dsvHeap->GetCPUDescriptorHandleForHeapStart();
+			_cmdList->OMSetRenderTargets(1, &rtvH, true, &dsvH);
 
 			// 画面のクリア
 			float r, g, b;
@@ -814,6 +900,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			b = (float)(0xff & frame >> 0) / 255.0f;
 			float clearColor[] = { 1.0f,1.0f,1.0f,1.0f };//黄色
 			_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+			_cmdList->ClearDepthStencilView(dsvH, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 			++frame;
 
 
@@ -828,15 +915,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 			//_cmdList->SetGraphicsRootDescriptorTable(1, heapHandle);
 
-
-			// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+			// プリミティブトポロジ
+			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
 			_cmdList->IASetVertexBuffers(0, 1, &vbView);
 			_cmdList->IASetIndexBuffer(&ibView);
 
 			// _cmdList->DrawInstanced(4, 1, 0, 0);
 			// _cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
-			_cmdList->DrawInstanced(vertNum, 1, 0, 0);
+			// _cmdList->DrawInstanced(vertNum, 1, 0, 0);
+			_cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);
 
 			BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 			BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
