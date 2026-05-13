@@ -61,12 +61,27 @@ struct Vertex
 };
 
 
-Vertex vertices[] = {
-	{{-0.4f, -0.7f, 0.0f},{0.0f,1.0f}},
-	{{-0.4f,  0.7f, 0.0f},{0.0f,0.0f}},
-	{{ 0.4f, -0.7f, 0.0f},{1.0f,1.0f}},
-	{{ 0.4f,  0.7f, 0.0f},{1.0f,0.0f}}
-};
+//Vertex vertices[] = {
+//	{{ 0.4f, -0.7f, 0.0f},{0.0f,1.0f}},
+//	{{-0.4f,  0.7f, 0.0f},{0.0f,0.0f}},
+//	{{ 0.4f, -0.7f, 0.0f},{1.0f,1.0f}},
+//	{{ 0.4f,  0.7f, 0.0f},{1.0f,0.0f}}
+//};
+//
+//Vertex vertices[] = {
+//	{{   0.0f, 100.0f, 0.0f},{0.0f,1.0f}},
+//	{{   0.0f,   0.0f, 0.0f},{0.0f,0.0f}},
+//	{{ 100.0f, 100.0f, 0.0f},{1.0f,1.0f}},
+//	{{ 100.0f,   0.0f, 0.0f},{1.0f,0.0f}}
+//};
+
+//Vertex vertices[] = {
+//	{{  -1.0f, -1.0f, 0.0f},{0.0f,1.0f}},
+//	{{  -1.0f,  1.0f, 0.0f},{0.0f,0.0f}},
+//	{{   1.0f, -1.0f, 0.0f},{1.0f,1.0f}},
+//	{{   1.0f,  1.0f, 0.0f},{1.0f,0.0f}},
+//};
+
 
 float clearColor[] = { 1.0f, 1.0f, 0.0f, 1.0f };
 
@@ -284,6 +299,33 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	ShowWindow(hwnd, SW_SHOW);
 
+	struct PMDHeader {
+		float version;
+		char model_name[20];
+		char comment[256];
+	};
+
+	char signature[3] = {};
+	PMDHeader pmdHeader = {};
+	FILE* fp;
+
+	auto err = fopen_s(&fp, "Model/初音ミク.pmd", "rb");
+	if (fp == nullptr || err != 0) {
+		return -1;
+	}
+
+	fread(signature, sizeof(signature), 1, fp);
+	fread(&pmdHeader, sizeof(pmdHeader), 1, fp);
+
+	constexpr size_t pmdvertex_size = 38;
+	unsigned int vertNum;
+
+	fread(&vertNum, sizeof(vertNum), 1, fp);
+
+	std::vector<unsigned char> vertices(vertNum * pmdvertex_size);
+	fread(vertices.data(), vertices.size(), 1, fp);
+
+	fclose(fp);
 
 	D3D12_HEAP_PROPERTIES heapprop = {};
 	heapprop.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -391,8 +433,47 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 定数バッファの作成(d3dx12.h使用)
 	ID3D12Resource* constBuff = nullptr;
 
+	// XMMATRIX matrix = XMMatrixIdentity();
 
-	XMMATRIX matrix = XMMatrixIdentity();
+	XMMATRIX matrix = XMMatrixRotationY(XM_PIDIV4);
+	auto worldMat = XMMatrixRotationY(XM_PIDIV4);
+
+	XMFLOAT3 eye(0, 10, -15);
+	XMFLOAT3 target(0, 10, 0);
+	XMFLOAT3 up(0, 1, 0);
+
+	matrix *= XMMatrixLookAtLH(
+		XMLoadFloat3(&eye),
+		XMLoadFloat3(&target),
+		XMLoadFloat3(&up)
+	);
+
+	matrix *= XMMatrixPerspectiveFovLH(
+		XM_PIDIV2,
+		static_cast<float>(1280) / static_cast<float>(780),
+		1.0f,
+		100.0f
+	);
+
+	auto viewMat = XMMatrixLookAtLH(
+		XMLoadFloat3(&eye),
+		XMLoadFloat3(&target),
+		XMLoadFloat3(&up)
+	);
+
+	auto projMat = XMMatrixPerspectiveFovLH(
+		XM_PIDIV2,
+		static_cast<float>(1280) / static_cast<float>(780),
+		1.0f,
+		100.0f
+	);
+
+	//matrix.r[0].m128_f32[0] = 2.0f / 1280;
+	//matrix.r[1].m128_f32[1] = -2.0f / 720;
+	//matrix.r[0].m128_f32[3] = -1.0f;
+	//matrix.r[1].m128_f32[3] = 1.0f;
+	//matrix.r[3].m128_f32[0] = -1.0f;
+	//matrix.r[3].m128_f32[1] = 1.0f;
 
 	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	resDesc = CD3DX12_RESOURCE_DESC::Buffer((sizeof(matrix) + 0xff) & ~0xff);
@@ -425,17 +506,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	_dev->CreateConstantBufferView(&cbvDesc, basicHeapHandle);
 
 	ID3D12Resource* vertBuff = nullptr;
+	//result = _dev->CreateCommittedResource(
+	//	&heapprop,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&resdesc,
+	//	D3D12_RESOURCE_STATE_GENERIC_READ,
+	//	nullptr,
+	//	IID_PPV_ARGS(&vertBuff)
+	//);
+	auto heapPropVer = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto resoDescBuffVer = CD3DX12_RESOURCE_DESC::Buffer(vertices.size());
 	result = _dev->CreateCommittedResource(
-		&heapprop,
+		&heapPropVer,
 		D3D12_HEAP_FLAG_NONE,
-		&resdesc,
+		&resoDescBuffVer,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(&vertBuff)
 	);
 
 	//XMFLOAT3* vertMap = nullptr;
-	Vertex* vertMap = nullptr;
+	// Vertex* vertMap = nullptr;
+	unsigned char* vertMap = nullptr;
 	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
 
 	std::copy(std::begin(vertices), std::end(vertices), vertMap);
@@ -444,8 +536,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
 	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
-	vbView.SizeInBytes = sizeof(vertices);
-	vbView.StrideInBytes = sizeof(vertices[0]);
+	//vbView.SizeInBytes = sizeof(vertices);
+	//vbView.StrideInBytes = sizeof(vertices[0]);
+	vbView.SizeInBytes = vertices.size();
+	vbView.StrideInBytes = pmdvertex_size;
 
 
 	unsigned short indeces[] = {
@@ -508,8 +602,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			D3D12_APPEND_ALIGNED_ELEMENT,
 			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
 		},
+		{
+			"NORMAL",0,DXGI_FORMAT_R32G32B32_FLOAT,0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
+		},
 		{ // uv
 			"TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
+		},
+		{
+			"BONE_NO",0,DXGI_FORMAT_R16G16_UINT,0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
+		},
+		{
+			"WEIGHT",0,DXGI_FORMAT_R8_UINT,0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
+		},
+		{
+			"EDGE_FLG",0,DXGI_FORMAT_R8_UINT,0,
 			D3D12_APPEND_ALIGNED_ELEMENT,
 			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0
 		},
@@ -580,19 +694,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descTblRange[1].BaseShaderRegister = 0;
 	descTblRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-	D3D12_ROOT_PARAMETER rootparam[2] = {};
-	rootparam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootparam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];
-	rootparam[0].DescriptorTable.NumDescriptorRanges = 1;
-	rootparam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	D3D12_ROOT_PARAMETER rootparam = {};
+	//rootparam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	//rootparam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];
+	//rootparam[0].DescriptorTable.NumDescriptorRanges = 1;
+	//rootparam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-	rootparam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[1];
-	rootparam[1].DescriptorTable.NumDescriptorRanges = 1;
-	rootparam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	//rootparam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	//rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[1];
+	//rootparam[1].DescriptorTable.NumDescriptorRanges = 1;
+	//rootparam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
-	rootSignatureDesc.pParameters = rootparam;
-	rootSignatureDesc.NumParameters = 2;
+	rootparam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootparam.DescriptorTable.pDescriptorRanges = descTblRange;
+	rootparam.DescriptorTable.NumDescriptorRanges = 2;
+	rootparam.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+	rootSignatureDesc.pParameters = &rootparam;
+	rootSignatureDesc.NumParameters = 1;
 
 	D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
 	samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -650,6 +769,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	MSG msg = {};
 	unsigned int frame = 0;
+	float angle = 0.0f;
 	// メインループの定義
 	{
 
@@ -662,6 +782,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (msg.message == WM_QUIT) {
 				break;
 			}
+
+			// angle += 0.05f;
+
+			worldMat = XMMatrixRotationY(angle);
+			*mapMatrix = worldMat * viewMat * projMat;
 
 			auto bbIdx = _swapChain->GetCurrentBackBufferIndex();
 
@@ -687,28 +812,31 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			r = (float)(0xff & frame >> 16) / 255.0f;
 			g = (float)(0xff & frame >> 8) / 255.0f;
 			b = (float)(0xff & frame >> 0) / 255.0f;
-			float clearColor[] = { r,g,b,1.0f };//黄色
+			float clearColor[] = { 1.0f,1.0f,1.0f,1.0f };//黄色
 			_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
 			++frame;
 
 
 			_cmdList->RSSetViewports(1, &viewport);
 			_cmdList->RSSetScissorRects(1, &scissorrect);
+
 			_cmdList->SetGraphicsRootSignature(rootsignature);
 			_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 			_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
 
-			auto heapHandle = basicDescHeap->GetGPUDescriptorHandleForHeapStart();
-			heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-			_cmdList->SetGraphicsRootDescriptorTable(1, heapHandle);
+			//auto heapHandle = basicDescHeap->GetGPUDescriptorHandleForHeapStart();
+			//heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			//_cmdList->SetGraphicsRootDescriptorTable(1, heapHandle);
 
 
-			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
 			_cmdList->IASetVertexBuffers(0, 1, &vbView);
 			_cmdList->IASetIndexBuffer(&ibView);
 
 			// _cmdList->DrawInstanced(4, 1, 0, 0);
-			_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+			// _cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+			_cmdList->DrawInstanced(vertNum, 1, 0, 0);
 
 			BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 			BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
