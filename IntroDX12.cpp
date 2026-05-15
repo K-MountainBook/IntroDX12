@@ -197,14 +197,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	for (auto adpt : adapters) {
 		DXGI_ADAPTER_DESC adesc;
 		adpt->GetDesc(&adesc);
-		//std::wcout << L"video card name: " << adesc.Description << std::endl;
+		std::wcout << L"video card name: " << adesc.Description << std::endl;
 
-		//std::wstring strDesc = adesc.Description;
+		std::wstring strDesc = adesc.Description;
 
-		//if (strDesc.find(L"NVIDIA") != std::string::npos) {
-		//	_tmpAdapter = adpt;
-		//	break;
-		//}
+		if (strDesc.find(L"NVIDIA") != std::string::npos) {
+			_tmpAdapter = adpt;
+			break;
+		}
 
 	}
 
@@ -1013,6 +1013,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			auto dsvH = dsvHeap->GetCPUDescriptorHandleForHeapStart();
 			_cmdList->OMSetRenderTargets(1, &rtvH, true, &dsvH);
 
+			_cmdList->ClearDepthStencilView(dsvH, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
 			// 画面のクリア
 			float r, g, b;
 			r = (float)(0xff & frame >> 16) / 255.0f;
@@ -1020,7 +1022,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			b = (float)(0xff & frame >> 0) / 255.0f;
 			float clearColor[] = { 1.0f,1.0f,1.0f,1.0f };//黄色
 			_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
-			_cmdList->ClearDepthStencilView(dsvH, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 			++frame;
 
 
@@ -1028,20 +1029,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			_cmdList->RSSetScissorRects(1, &scissorrect);
 
 			_cmdList->SetGraphicsRootSignature(rootsignature);
+
+			// 行列変換
 			_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 			_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
+
 			// マテリアル
-			_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
-			_cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
+			//_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
+			//_cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
 
 			auto materialH = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
+			unsigned int idxOffset = 0;
 
-			unsigned int idexOffset = 0;
 			for (auto& m : materials) {
 				_cmdList->SetGraphicsRootDescriptorTable(1, materialH);
-				_cmdList->DrawIndexedInstanced(m.indecesNum, 1, idexOffset, 0, 0);
+				// _cmdList->DrawIndexedInstanced(m.indecesNum, 1, idxOffset, 0, 0);
 				materialH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-				idexOffset += m.indecesNum;
+				idxOffset += m.indecesNum;
 			}
 
 
