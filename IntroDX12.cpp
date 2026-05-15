@@ -1031,8 +1031,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 			_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
 			// マテリアル
-			// _cmdList->SetDescriptorHeaps(1, &materialDescHeap);
-			// _cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
+			_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
+			_cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
 
 			auto materialH = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
 
