@@ -552,7 +552,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<Material> materials(materialNum);
 
 	// マテリアルデータを配列へコピー
-	std::vector<ID3D12Resource*> textureResource(materialNum);
+	std::vector<ID3D12Resource*> textureResources(materialNum);
 	{
 		std::vector<PMDMaterial> pmdMaterials(materialNum);
 		fread(pmdMaterials.data(), pmdMaterials.size() * sizeof(PMDMaterial), 1, fp);
@@ -569,11 +569,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		for (int i = 0; i < pmdMaterials.size(); ++i) {
 			if (strlen(pmdMaterials[i].texFilePath) == 0)
 			{
-				textureResource[i] = nullptr;
+				textureResources[i] = nullptr;
 			}
+			// モデルのテクスチャパスからアプリケーションからのテクスチャパスを得る
+			auto texFilePath = GetTexturePathFromModelAndTexPath(
+				strModelPath,
+				pmdMaterials[i].texFilePath
+			);
+			textureResources[i] = LoadTextureFromFile(texFilePath);
 		}
 
-		// モデルのテクスチャパスから～
 
 	}
 	fclose(fp);
