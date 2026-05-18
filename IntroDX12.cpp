@@ -215,6 +215,7 @@ ID3D12Resource* LoadTextureFromFile(std::string& texPath) {
 
 }
 
+
 #ifdef _DEBUG
 /// <summary>
 /// デバッグの場合はmain関数
@@ -543,26 +544,38 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indices.resize(indicesNum);
 	fread(indices.data(), indices.size() * sizeof(indices[0]), 1, fp);
 
+
+
 	// マテリアルデータの読み込み
-	unsigned int materialNum;
+	unsigned int materialNum;	//マテリアル数
 	fread(&materialNum, sizeof(materialNum), 1, fp);
+	std::vector<Material> materials(materialNum);
 
-	std::vector<PMDMaterial> pmdMaterials(materialNum);
+	// マテリアルデータを配列へコピー
+	std::vector<ID3D12Resource*> textureResource(materialNum);
+	{
+		std::vector<PMDMaterial> pmdMaterials(materialNum);
+		fread(pmdMaterials.data(), pmdMaterials.size() * sizeof(PMDMaterial), 1, fp);
 
-	fread(pmdMaterials.data(), pmdMaterials.size() * sizeof(PMDMaterial), 1, fp);
+		for (int i = 0; i < pmdMaterials.size(); ++i) {
+			materials[i].indecesNum = pmdMaterials[i].indicesNum;
+			materials[i].material.diffuse = pmdMaterials[i].diffuse;
+			materials[i].material.alpha = pmdMaterials[i].alpha;
+			materials[i].material.specular = pmdMaterials[i].specular;
+			materials[i].material.specularity = pmdMaterials[i].specularity;
+			materials[i].material.ambient = pmdMaterials[i].ambient;
+		}
 
+		for (int i = 0; i < pmdMaterials.size(); ++i) {
+			if (strlen(pmdMaterials[i].texFilePath) == 0)
+			{
+				textureResource[i] = nullptr;
+			}
+		}
 
-	std::vector<Material> materials(pmdMaterials.size());
+		// モデルのテクスチャパスから～
 
-	for (int i = 0; i < pmdMaterials.size(); ++i) {
-		materials[i].indecesNum = pmdMaterials[i].indicesNum;
-		materials[i].material.diffuse = pmdMaterials[i].diffuse;
-		materials[i].material.alpha = pmdMaterials[i].alpha;
-		materials[i].material.specular = pmdMaterials[i].specular;
-		materials[i].material.specularity = pmdMaterials[i].specularity;
-		materials[i].material.ambient = pmdMaterials[i].ambient;
 	}
-
 	fclose(fp);
 
 
@@ -662,7 +675,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&texDescHeap));
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format = metadata.format;
+	srvDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MipLevels = 1;
@@ -917,7 +930,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12DescriptorHeap* materialDescHeap = nullptr;
 
 	D3D12_DESCRIPTOR_HEAP_DESC materialDescHeapDesc = {};
-	materialDescHeapDesc.NumDescriptors = materialNum;
+	materialDescHeapDesc.NumDescriptors = materialNum * 2;
 	materialDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	materialDescHeapDesc.NodeMask = 0;
 
@@ -935,10 +948,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 開始地点を記録
 	auto matDescHeapH = materialDescHeap->GetCPUDescriptorHandleForHeapStart();
-
+	auto incSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	for (int i = 0; i < materialNum; ++i) {
 		_dev->CreateConstantBufferView(&matCBVDesc, matDescHeapH);
-		matDescHeapH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		//matDescHeapH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		//matCBVDesc.BufferLocation += materialBufferSize;
+		matDescHeapH.ptr += incSize;
 		matCBVDesc.BufferLocation += materialBufferSize;
 	}
 
