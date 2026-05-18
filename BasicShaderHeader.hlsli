@@ -1,7 +1,7 @@
 // t# テクスチャバッファ
 // b# 定数バッファ
 // s# サンプラーのレジスタ
-
+// https://learn.microsoft.com/ja-jp/windows/win32/direct3dgetstarted/work-with-shaders-and-shader-resources
 Texture2D<float4> tex : register(t0);
 SamplerState smp : register(s0);
 
