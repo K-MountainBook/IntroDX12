@@ -106,6 +106,114 @@ LRESULT WindowProcedure(HWND hwnd, UINT msg, WPARAM wpram, LPARAM lparam) {
 	return DefWindowProc(hwnd, msg, wpram, lparam);
 }
 
+std::string GetTexturePathFromModelAndTexPath(
+	const std::string& modelPath,
+	const char* texPath
+)
+{
+	auto folderPath = modelPath.substr(0, modelPath.rfind('/') + 1);
+	return folderPath + texPath;
+}
+
+std::wstring GetWideStringFromString(
+	const std::string& str
+)
+{
+	auto num1 = MultiByteToWideChar(
+		CP_ACP,
+		MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		str.c_str(),
+		-1,
+		nullptr,
+		0
+	);
+
+	std::wstring wstr;
+	wstr.resize(num1);
+
+	auto num2 = MultiByteToWideChar(
+		CP_ACP,
+		MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		str.c_str(),
+		-1,
+		&wstr[0],
+		num1
+	);
+
+	assert(num1 == num2);
+	return wstr;
+}
+
+ID3D12Resource* LoadTextureFromFile(std::string& texPath) {
+	//WIC テクスチャのロード
+	TexMetadata metadata = {};
+	ScratchImage	scratchImg = {};
+
+	auto result = LoadFromWICFile(
+		GetWideStringFromString(texPath).c_str(),
+		WIC_FLAGS_NONE,
+		&metadata,
+		scratchImg
+	);
+
+	if (FAILED(result))
+	{
+		return nullptr;
+	}
+
+	auto img = scratchImg.GetImage(0, 0, 0);
+
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.CreationNodeMask = 0;
+	texHeapProp.VisibleNodeMask = 0;
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	resDesc.Format = metadata.format;
+	resDesc.Width = metadata.width;
+	resDesc.Height = metadata.height;
+	resDesc.DepthOrArraySize = metadata.arraySize;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = metadata.mipLevels;
+	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	// バッファ作成
+	ID3D12Resource* texBuff = nullptr;
+	result = _dev->CreateCommittedResource(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&texBuff)
+	);
+
+	if (FAILED(result))
+	{
+		return nullptr;
+	}
+
+	result = texBuff->WriteToSubresource(
+		0,
+		nullptr,
+		img->pixels,
+		img->rowPitch,
+		img->slicePitch
+	);
+
+	if (FAILED(result)) {
+		return nullptr;
+	}
+
+	return texBuff;
+
+}
 
 #ifdef _DEBUG
 /// <summary>
@@ -409,10 +517,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	PMDHeader pmdHeader = {};
 	FILE* fp;
 
-	auto err = fopen_s(&fp, "Model/初音ミク.pmd", "rb");
-	if (fp == nullptr || err != 0) {
-		return -1;
-	}
+	// auto err = fopen_s(&fp, "Model/初音ミク.pmd", "rb");
+	std::string strModelPath = "Model/初音ミク.pmd";
+	fopen_s(&fp, strModelPath.c_str(), "rb");
+
 
 	fread(signature, sizeof(signature), 1, fp);
 	fread(&pmdHeader, sizeof(pmdHeader), 1, fp);
