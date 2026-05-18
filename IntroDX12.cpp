@@ -537,6 +537,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	fread(vertices.data(), vertices.size(), 1, fp);
 
 	// 頂点インデクスデータの読み込み
+	// 頂点インデックスとはポリゴンの頂点を結ぶ順の配列
+	// 重なる頂点は常に同じ値（座標）にしなければいけない。重なる点を配列で格納している。
+	// 頂点を決めた後に、順にポリゴンを貼る。その貼り方が「頂点インデックス」
 	std::vector<unsigned short> indices;
 
 	unsigned int indicesNum;
@@ -584,31 +587,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	fclose(fp);
 
 
-	D3D12_HEAP_PROPERTIES heapprop = {};
-	heapprop.Type = D3D12_HEAP_TYPE_UPLOAD;
-	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-
-	D3D12_HEAP_PROPERTIES texHeapProp = {};
-	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
-	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
-	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
-	texHeapProp.CreationNodeMask = 0;
-	texHeapProp.VisibleNodeMask = 0;
-
-	// 不要なので削除
-	//D3D12_RESOURCE_DESC resdesc = {};
-	//resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	//resdesc.Width = sizeof(vertices);
-	//resdesc.Height = 1;
-	//resdesc.DepthOrArraySize = 1;
-	//resdesc.MipLevels = 1;
-	//resdesc.Format = DXGI_FORMAT_UNKNOWN;
-	//resdesc.SampleDesc.Count = 1;
-	//resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-	//resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
 	//WICテクスチャのロード
 	TexMetadata metadata = {};
 	ScratchImage scratchImg = {};
@@ -617,21 +595,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		L"img/textest.png", WIC_FLAGS_NONE, &metadata, scratchImg
 	);
 
-	auto img = scratchImg.GetImage(0, 0, 0);
+	// 前提知識
+	// この記事の読者は前提としてDirectX12の基礎知識を持っているものとします。記事が非常に長くなってしまうので、基本要素の詳細な説明は実施しません。
+	// 具体的には、以下の知識は習得済みとして話を進めます。
+
+	// DirectX12における「リソース」
+	// リソースに、利用方法に関する情報を紐づけた「ディスクリプタ」
+	// ディスクリプタをCPU、GPUの両方からアクセス可能なメモリ領域に格納する「ディスクリプタヒープ」
+	// ディスクリプタヒープ上の連続したディスクリプタの範囲を示す「ディスクリプタレンジ」
+	// ディスクリプタヒープ上のディスクリプタとシェーダのレジスタ番号とをマッピングする「ルートシグネチャ」
+	// ディスクリプタレンジ情報をルートシグネチャに連携するための「ディスクリプタテーブル」
 
 	D3D12_RESOURCE_DESC resDesc = {};
-	/*
-	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	resDesc.Width = 256;
-	resDesc.Height = 256;
-	resDesc.DepthOrArraySize = 1;
-	resDesc.SampleDesc.Count = 1;
-	resDesc.SampleDesc.Quality = 0;
-	resDesc.MipLevels = 1;
-	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-	*/
 	// テクスチャのメタデータに合わせる
 	resDesc.Format = metadata.format;
 	resDesc.Width = metadata.width;
@@ -644,6 +619,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
+
+	D3D12_HEAP_PROPERTIES heapProp = {};
+	heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.CreationNodeMask = 0;
+	texHeapProp.VisibleNodeMask = 0;
+
+	auto img = scratchImg.GetImage(0, 0, 0);
 	ID3D12Resource* texbuff = nullptr;
 	result = _dev->CreateCommittedResource(
 		&texHeapProp,
@@ -800,6 +790,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertBuff->Unmap(0, nullptr);
 
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
+	// 頂点バッファービューの初期化
 	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
 	vbView.SizeInBytes = vertices.size();
 	vbView.StrideInBytes = pmdvertex_size;
@@ -835,6 +826,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	idxBuff->Unmap(0, nullptr);
 
 	D3D12_INDEX_BUFFER_VIEW ibView = {};
+	// インデックスバッファビュー・・・？
 	ibView.BufferLocation = idxBuff->GetGPUVirtualAddress();
 	ibView.Format = DXGI_FORMAT_R16_UINT;
 	ibView.SizeInBytes = indices.size() * sizeof(indices[0]);
@@ -846,6 +838,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3DBlob* errorBlob = nullptr;
 
 
+	// 頂点シェーダーをコンパイル
 	result = D3DCompileFromFile(
 		L"BasicVertexShader.hlsl",
 		nullptr,
@@ -856,6 +849,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		&_vsBlob,
 		&errorBlob);
 
+	// ピクセルシェーダーをコンパイル
 	result = D3DCompileFromFile(
 		L"BasicPixelShader.hlsl",
 		nullptr,
@@ -962,15 +956,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		matCBVDesc.BufferLocation += materialBufferSize;
 	}
 
-
-
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC gpipeline = {};
 
 	gpipeline.pRootSignature = nullptr;
-	gpipeline.VS.pShaderBytecode = _vsBlob->GetBufferPointer();
-	gpipeline.VS.BytecodeLength = _vsBlob->GetBufferSize();
-	gpipeline.PS.pShaderBytecode = _psBlob->GetBufferPointer();
-	gpipeline.PS.BytecodeLength = _psBlob->GetBufferSize();
+	//gpipeline.VS.pShaderBytecode = _vsBlob->GetBufferPointer();
+	//gpipeline.VS.BytecodeLength = _vsBlob->GetBufferSize();
+	//gpipeline.PS.pShaderBytecode = _psBlob->GetBufferPointer();
+	//gpipeline.PS.BytecodeLength = _psBlob->GetBufferSize();
+	// ↓短縮すると以下
+	gpipeline.VS = { reinterpret_cast<UINT8*>(_vsBlob->GetBufferPointer()),_vsBlob->GetBufferSize() };
+	gpipeline.PS = { reinterpret_cast<UINT8*>(_psBlob->GetBufferPointer()),_psBlob->GetBufferSize() };
 
 	gpipeline.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
@@ -1032,11 +1027,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	D3D12_ROOT_PARAMETER rootparam[2] = {};
 
+	// 座標変換
 	rootparam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootparam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];
 	rootparam[0].DescriptorTable.NumDescriptorRanges = 2;
 	rootparam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
+	// シェーダー
 	rootparam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[2];
 	rootparam[1].DescriptorTable.NumDescriptorRanges = 1;
