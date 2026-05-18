@@ -1030,6 +1030,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			_cmdList->SetGraphicsRootSignature(rootsignature);
 
+			// プリミティブトポロジ
+			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+			_cmdList->IASetVertexBuffers(0, 1, &vbView);
+			_cmdList->IASetIndexBuffer(&ibView);
+
 			// 行列変換
 			_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 			_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
@@ -1043,7 +1049,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			for (auto& m : materials) {
 				_cmdList->SetGraphicsRootDescriptorTable(1, materialH);
-				// _cmdList->DrawIndexedInstanced(m.indecesNum, 1, idxOffset, 0, 0);
+				_cmdList->DrawIndexedInstanced(m.indecesNum, 1, idxOffset, 0, 0);
 				materialH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				idxOffset += m.indecesNum;
 			}
@@ -1052,12 +1058,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//auto heapHandle = basicDescHeap->GetGPUDescriptorHandleForHeapStart();
 			//heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 			//_cmdList->SetGraphicsRootDescriptorTable(1, heapHandle);
-
-			// プリミティブトポロジ
-			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-			_cmdList->IASetVertexBuffers(0, 1, &vbView);
-			_cmdList->IASetIndexBuffer(&ibView);
 
 			// _cmdList->DrawInstanced(4, 1, 0, 0);
 			// _cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
