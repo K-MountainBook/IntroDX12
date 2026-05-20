@@ -546,18 +546,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// PMDマテリアル構造体
 	struct PMDMaterial {
-		XMFLOAT3 diffuse;
-		float alpha;
-		float specularity;
-		XMFLOAT3 specular;
-		XMFLOAT3 ambient;
-		unsigned char toonIdx;
-		unsigned char edgeFlg;
+		XMFLOAT3 diffuse;	// ディフューズカラー
+		float alpha;		// ディフューズのα
+		float specularity;	// 鏡面反射の強さ
+		XMFLOAT3 specular;	// 鏡面反射の色
+		XMFLOAT3 ambient;	// 環境光色
+		unsigned char toonIdx;	// トゥーン番号
+		unsigned char edgeFlg;	// マテリアルごとの輪郭線フラグ
 
 		// ここに2バイトのパディング（空き）がある。
 
-		unsigned int indicesNum;
-		char texFilePath[20];
+		unsigned int indicesNum;	// このマテリアルが割り当てられるインデックス数
+		char texFilePath[20];		// テクスチャファイルパス+α
 	}; // 計72バイト
 
 #pragma pack()
@@ -987,15 +987,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		},
 	};
 
+	/*マテリアルバッファの作成とシェーダーへの転送・表示
+	* 1.マテリアルデータ格納バッファーを作成する
+	* 2.Mapを使い、必要なデータをコピーする。
+	* 3.マテリアル用のディスクリプタヒープの作成
+	* 4.ディスクリプタヒープ上にビューの作成をする
+	* 5.マテリアル用ルートパラメータ設定を追加する
+	* 6.シェーダーを書き換える
+	*/
 	// マテリアルバッファの作成
-	auto materialBufferSize = sizeof(MaterialForHlsl);
-	materialBufferSize = (materialBufferSize + 0xff) & ~0xff;
+	auto materialBufferSize = sizeof(MaterialForHlsl);				//サイズの取得
+	materialBufferSize = (materialBufferSize + 0xff) & ~0xff;		//サイズの調整
 
+	// マテリアルバッファの確保
 	ID3D12Resource* materialBuff = nullptr;
-
 	auto matHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	auto matResDesc = CD3DX12_RESOURCE_DESC::Buffer(materialBufferSize * materialNum);
-
 	result = _dev->CreateCommittedResource(
 		&matHeapProp,
 		D3D12_HEAP_FLAG_NONE,
@@ -1005,43 +1012,43 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&materialBuff)
 	);
 
-	char* mapMaterial = nullptr;
-
-	result = materialBuff->Map(0, nullptr, (void**)&mapMaterial);
+	// マップマテリアルにバッファの内容をコピー
+	char* mapMaterial = nullptr;			// char型なので8bit
+	result = materialBuff->Map(0, nullptr, (void**)&mapMaterial);	// マッピングする
 	for (auto& m : materials) {
 		*((MaterialForHlsl*)mapMaterial) = m.material;	// データコピー
-		mapMaterial += materialBufferSize;
+		mapMaterial += materialBufferSize;	// 次のアライメントまで進める(+256bit)
 	}
-
 	materialBuff->Unmap(0, nullptr);
 
+	// マテリアル用ディスクリプタヒープの作成
 	ID3D12DescriptorHeap* materialDescHeap = nullptr;
 
 	D3D12_DESCRIPTOR_HEAP_DESC materialDescHeapDesc = {};
-	materialDescHeapDesc.NumDescriptors = materialNum * 2;
 	materialDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	materialDescHeapDesc.NodeMask = 0;
-
+	materialDescHeapDesc.NumDescriptors = materialNum;
 	materialDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-
+	// 実際の作成
 	result = _dev->CreateDescriptorHeap(
 		&materialDescHeapDesc,
 		IID_PPV_ARGS(&materialDescHeap)
 	);
 
+	// マテリアルのビューを作成
 	D3D12_CONSTANT_BUFFER_VIEW_DESC matCBVDesc = {};
-
-	matCBVDesc.BufferLocation = materialBuff->GetGPUVirtualAddress();
-	matCBVDesc.SizeInBytes = materialBufferSize;
+	matCBVDesc.BufferLocation = materialBuff->GetGPUVirtualAddress();	// バッファーのアドレス
+	matCBVDesc.SizeInBytes = materialBufferSize;						// 256bit
 
 	// 開始地点を記録
 	auto matDescHeapH = materialDescHeap->GetCPUDescriptorHandleForHeapStart();
 	auto incSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	for (int i = 0; i < materialNum; ++i) {
+		// バッファビューの作成
 		_dev->CreateConstantBufferView(&matCBVDesc, matDescHeapH);
-		//matDescHeapH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		//matCBVDesc.BufferLocation += materialBufferSize;
+		// ポインタを進める
 		matDescHeapH.ptr += incSize;
+		// バッファのアドレスを進める
 		matCBVDesc.BufferLocation += materialBufferSize;
 	}
 
@@ -1362,7 +1369,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 定数バッファビュー→ルートパラメータ番号1に対してディスクリプタヒープの場所をバインド
 			//_cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
 
+			// ヒープの先頭を取得する
 			auto materialH = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
+			// 最初はオフセット無し
 			unsigned int idxOffset = 0;
 
 			// これを実行するとミクさんが黒くなる
@@ -1371,6 +1380,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			for (auto& m : materials) {
 				_cmdList->SetGraphicsRootDescriptorTable(1, materialH);
 				_cmdList->DrawIndexedInstanced(m.indecesNum, 1, idxOffset, 0, 0);
+				// ヒープポインタとインデックスを先に進める
 				materialH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 				idxOffset += m.indecesNum;
 			}
