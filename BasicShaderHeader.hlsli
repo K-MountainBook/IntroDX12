@@ -2,14 +2,15 @@
 // b# 定数バッファ
 // s# サンプラーのレジスタ
 // https://learn.microsoft.com/ja-jp/windows/win32/direct3dgetstarted/work-with-shaders-and-shader-resources
-Texture2D<float4> tex : register(t0);
-SamplerState smp : register(s0);
+Texture2D<float4> tex : register(t0); // 0番スロットに設定されたテクスチャ
+SamplerState smp : register(s0); // 0番スロットに設定されたサンプラ
 
-// 座標
-cbuffer cbuff0 : register(b0)
+// 定数バッファー
+// 座標用
+cbuffer cbuff0 : register(b0) // 定数バッファ
 {
-    matrix world;
-    matrix viewproj;
+    matrix world;   // ワールド変換行列
+    matrix viewproj;    // ビュープロジェクション行列
 };
 
 //定数バッファー
