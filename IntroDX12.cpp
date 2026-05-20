@@ -659,6 +659,38 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 	fclose(fp);
 
+#pragma region 画像をテクスチャにする場合はコメント解除
+	// 画像をテクスチャにする場合はコメント解除
+	////WICテクスチャのロード
+	//TexMetadata metadata = {};
+	//ScratchImage scratchImg = {};
+
+	//result = LoadFromWICFile(
+	//	L"img/textest.png", WIC_FLAGS_NONE, &metadata, scratchImg
+	//);
+
+	//auto img = scratchImg.GetImage(0, 0, 0);
+
+	//ID3D12Resource* texbuff = nullptr;
+	//result = _dev->CreateCommittedResource(
+	//	&texHeapProp,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&resDesc,
+	//	D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,		// 作成するバッファはテクスチャ（シェーダリソース）
+	//	nullptr,
+	//	IID_PPV_ARGS(&texbuff)
+	//);
+
+	//// この方法は比較的わかりやすいが特定の条件で効率が下がるらしい
+	//result = texbuff->WriteToSubresource(
+	//	0,					// サブリソースインデックス
+	//	nullptr,			// 書き込み領域の指定（nullptrなら先頭から全域）
+	//	img->pixels,		// 書き込みたいデータのアドレス
+	//	img->rowPitch,		// 1行あたりのデータサイズ
+	//	img->slicePitch		// スライス当たりのデータサイズ
+	//);
+
+#pragma endregion
 
 	// 前提知識
 	// この記事の読者は前提としてDirectX12の基礎知識を持っているものとします。記事が非常に長くなってしまうので、基本要素の詳細な説明は実施しません。
@@ -671,8 +703,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ディスクリプタヒープ上のディスクリプタとシェーダのレジスタ番号とをマッピングする「ルートシグネチャ」
 	// ディスクリプタレンジ情報をルートシグネチャに連携するための「ディスクリプタテーブル」
 
-
-	//// テクスチャバッファの作成
+	// 画像をテクスチャにする場合はコメント解除
+		//// テクスチャバッファの作成
 	//D3D12_HEAP_PROPERTIES texHeapProp = {};
 	//texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;	// 特殊な設定なのでCUSTOMにする
 	//texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;	// ライトバック
@@ -721,7 +753,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descHeapDesc.NodeMask = 0;											// マスクは0
 	descHeapDesc.NumDescriptors = 3;									// SRVとCBV1ずつで２個に設定（chapter6）
 	descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;			// シェーダリソースビュー用
-	
+
 	// ディスクリプタヒープを生成
 	result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&basicDescHeap));
 	//descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -729,14 +761,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//descHeapDesc.NumDescriptors = 1;
 	//descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	//result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&texDescHeap));
-
-	// シェーダーリソースビューの作成
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;		// 正規化されたRGBA
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;	//データのRGBAをどのようにマッピングするか。設定値はマクロで「指定されたフォーマットにデータ通りの順序で割り当てられている。
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		//2Dのテクスチャである
-	srvDesc.Texture2D.MipLevels = 1;							//ミップマップは使用しないので1
-
 	// これは単位行列の取得
 	// XMMATRIX matrix = XMMatrixIdentity();
 
@@ -813,6 +837,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ディスクリプタヒープ内（VRAM上）の先頭ハンドルを取得している
 	auto basicHeapHandle = basicDescHeap->GetCPUDescriptorHandleForHeapStart();
 
+	// 画像をテクスチャにする場合はコメント解除
 	//// シェーダーリソースビューの生成
 	//_dev->CreateShaderResourceView(
 	//	texbuff,	// ビューと関連付けるバッファ
@@ -1033,28 +1058,39 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	matCBVDesc.BufferLocation = materialBuff->GetGPUVirtualAddress();	// バッファーのアドレス
 	matCBVDesc.SizeInBytes = materialBufferSize;						// 256bit
 
+
+	// シェーダーリソースビューの作成→テクスチャビュー
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;	//データのRGBAをどのようにマッピングするか。設定値はマクロで「指定されたフォーマットにデータ通りの順序で割り当てられている。
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		//2Dのテクスチャである
+	srvDesc.Texture2D.MipLevels = 1;							//ミップマップは使用しないので1
+
 	// 開始地点を記録
 	auto matDescHeapH = materialDescHeap->GetCPUDescriptorHandleForHeapStart();
 	auto incSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	for (int i = 0; i < materialNum; ++i) {
-		// バッファビューの作成
+		// マテリアル用定数バッファビューの作成
 		_dev->CreateConstantBufferView(&matCBVDesc, matDescHeapH);
 		// ポインタを進める
 		matDescHeapH.ptr += incSize;
 		// バッファのアドレスを進める
 		matCBVDesc.BufferLocation += materialBufferSize;
 
-		//if (textureResources[i] != nullptr) {
-		//	srvDesc.Format = textureResources[i]->GetDesc().Format;
-		//}
+		// シェーダリソースビューに対して値のセットを行う
+		if (textureResources[i] != nullptr) {
+			srvDesc.Format = textureResources[i]->GetDesc().Format;
+		}
+		else {
+			srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		}
 
-		//_dev->CreateShaderResourceView(
-		//	textureResources[i],
-		//	&srvDesc,
-		//	matDescHeapH
-		//);
+		_dev->CreateShaderResourceView(
+			textureResources[i],
+			&srvDesc,
+			matDescHeapH
+		);
 
-		//matDescHeapH.ptr += incSize;
+		matDescHeapH.ptr += incSize;
 
 	}
 
@@ -1383,11 +1419,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// これを実行するとミクさんが黒くなる
 			// _cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);
 
+			auto cbvsrvIncSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * 2;
 			for (auto& m : materials) {
 				_cmdList->SetGraphicsRootDescriptorTable(1, materialH);
 				_cmdList->DrawIndexedInstanced(m.indecesNum, 1, idxOffset, 0, 0);
 				// ヒープポインタとインデックスを先に進める
-				materialH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+				materialH.ptr += cbvsrvIncSize;
 				idxOffset += m.indecesNum;
 			}
 
