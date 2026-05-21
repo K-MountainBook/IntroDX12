@@ -1,4 +1,8 @@
-﻿
+﻿/*CreateDescriptorHeap
+* GPU上にディスクリプタヒープを作成する命令
+*/
+
+
 #include <tchar.h>
 #include <vector>
 
@@ -593,8 +597,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// auto err = fopen_s(&fp, "Model/初音ミク.pmd", "rb");
 	std::string strModelPath = "Model/初音ミク.pmd";
-	fopen_s(&fp, strModelPath.c_str(), "rb");
+	auto fopen_err = fopen_s(&fp, strModelPath.c_str(), "rb");
 
+	if (fopen_err != 0) {
+		return -1;
+	}
 
 	fread(signature, sizeof(signature), 1, fp);
 	fread(&pmdHeader, sizeof(pmdHeader), 1, fp);
@@ -752,7 +759,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;		// シェーダーから見えるように
 	descHeapDesc.NodeMask = 0;											// マスクは0
-	descHeapDesc.NumDescriptors = 3;									// SRVとCBV1ずつで２個に設定（chapter6）
+	descHeapDesc.NumDescriptors = 2;									// SRVとCBV1ずつで２個に設定（chapter6）
 	descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;			// シェーダリソースビュー用
 
 	// ディスクリプタヒープを生成
@@ -847,7 +854,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 	cbvDesc.BufferLocation = constBuff->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = constBuff->GetDesc().Width;
+	cbvDesc.SizeInBytes = static_cast<UINT>(constBuff->GetDesc().Width);
 	// 定数バッファビューの作成
 	_dev->CreateConstantBufferView(
 		&cbvDesc,			// 定数バッファビューの設定 
@@ -1394,24 +1401,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
 			++frame;
 
-
+			// 二つのヒープを読み込む
 			ID3D12DescriptorHeap* heaps[] = { basicDescHeap,materialDescHeap };
 			_cmdList->SetDescriptorHeaps(2, heaps);
 			// _cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 			// シェーダーリソースビュー→ルートパラメータ番号0に対して、ディスクリプタヒープの場所をバインド
-			_cmdList->SetGraphicsRootDescriptorTable(
-				0
-				, basicDescHeap->GetGPUDescriptorHandleForHeapStart()
-			);
-			//_cmdList->SetGraphicsRootDescriptorTable(
-			//	1,
-			//	materialDescHeap->GetGPUDescriptorHandleForHeapStart()
-			//);
-			//_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
-			// 定数バッファビュー→ルートパラメータ番号1に対してディスクリプタヒープの場所をバインド
-			//_cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
+			// 第一引数の数字はルートパラメータのインデックス番号
+			// このプログラムだと、定数レジスタ一つ目
+			_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
 
-			// ヒープの先頭を取得する
+			// マテリアルヒープの先頭を取得する
 			auto materialH = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
 			// 最初はオフセット無し
 			unsigned int idxOffset = 0;
@@ -1421,13 +1420,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			auto cbvsrvIncSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * 2;
 			for (auto& m : materials) {
+				// 第一引数の数字はルートパラメータのインデックス番号
+				// このプログラムだと、定数レジスタ二つ目
 				_cmdList->SetGraphicsRootDescriptorTable(1, materialH);
 				_cmdList->DrawIndexedInstanced(m.indecesNum, 1, idxOffset, 0, 0);
 				// ヒープポインタとインデックスを先に進める
 				materialH.ptr += cbvsrvIncSize;
 				idxOffset += m.indecesNum;
 			}
-
 
 			//auto heapHandle = basicDescHeap->GetGPUDescriptorHandleForHeapStart();
 			//heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
