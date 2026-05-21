@@ -473,7 +473,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_RESOURCE_DESC depthResDesc = {};
 	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;	// 2次元テクスチャデータですよ
 	depthResDesc.Width = 1280;				// レンダーターゲットと同じサイズ
-	depthResDesc.Height = 780;				// レンダーターゲットと同じサイズ
+	depthResDesc.Height = 720;				// レンダーターゲットと同じサイズ
 	depthResDesc.DepthOrArraySize = 1;		//テクスチャ配列でも3Dテクスチャでもないので1個
 	depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;	// 深度値は深度に 32 ビットをサポートする単一コンポーネントの 32 ビット浮動小数点形式
 	depthResDesc.SampleDesc.Count = 1;			// サンプルは1ピクセルあたり1
@@ -785,7 +785,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	matrix *= XMMatrixPerspectiveFovLH(
 		XM_PIDIV2,
-		static_cast<float>(1280) / static_cast<float>(780),
+		static_cast<float>(1280) / static_cast<float>(720),
 		1.0f,
 		100.0f
 	);
@@ -798,7 +798,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	auto projMat = XMMatrixPerspectiveFovLH(
 		XM_PIDIV2,
-		static_cast<float>(1280) / static_cast<float>(780),
+		static_cast<float>(1280) / static_cast<float>(720),
 		1.0f,
 		100.0f
 	);
@@ -1400,7 +1400,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			++frame;
 
 
-			_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
+			ID3D12DescriptorHeap* heaps[] = { basicDescHeap,materialDescHeap };
+			_cmdList->SetDescriptorHeaps(2, heaps);
+			// _cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 			// シェーダーリソースビュー→ルートパラメータ番号0に対して、ディスクリプタヒープの場所をバインド
 			_cmdList->SetGraphicsRootDescriptorTable(
 				0
@@ -1443,7 +1445,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// _cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 			// _cmdList->DrawInstanced(vertNum, 1, 0, 0);
 			// 全頂点を描画する
-			_cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);
+			// _cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);
 
 			// レンダーターゲットの状態を入れ替える
 			//BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
