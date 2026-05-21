@@ -646,6 +646,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (strlen(pmdMaterials[i].texFilePath) == 0)
 			{
 				textureResources[i] = nullptr;
+				continue;
 			}
 			// モデルのテクスチャパスからアプリケーションからのテクスチャパスを得る
 			auto texFilePath = GetTexturePathFromModelAndTexPath(
@@ -756,13 +757,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// ディスクリプタヒープを生成
 	result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&basicDescHeap));
-	//descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	//descHeapDesc.NodeMask = 0;
-	//descHeapDesc.NumDescriptors = 1;
-	//descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	//result = _dev->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(&texDescHeap));
-	// これは単位行列の取得
-	// XMMATRIX matrix = XMMatrixIdentity();
+	// ディスクリプタヒープ内（VRAM上）の先頭ハンドルを取得している
+	auto basicHeapHandle = basicDescHeap->GetCPUDescriptorHandleForHeapStart();
+
 
 	XMMATRIX matrix = XMMatrixRotationY(XM_PIDIV4);
 	auto worldMat = XMMatrixRotationY(XM_PIDIV4);
@@ -834,8 +831,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	mapMatrix->viewproj = viewMat * projMat;					// データのコピー～
 	constBuff->Unmap(0, nullptr);								// アンマップ
 
-	// ディスクリプタヒープ内（VRAM上）の先頭ハンドルを取得している
-	auto basicHeapHandle = basicDescHeap->GetCPUDescriptorHandleForHeapStart();
 
 	// 画像をテクスチャにする場合はコメント解除
 	//// シェーダーリソースビューの生成
@@ -1173,20 +1168,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	* ルートシグネチャ作成時にD3D12_ROOT_SIGNATURE_DESCオブジェクトにルートパラメータを設定して利用する。
 	*/
 	D3D12_DESCRIPTOR_RANGE descTblRange[3] = {};
-	//テクスチャ用レジスタ
-	descTblRange[0].NumDescriptors = 1;
-	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;	//種別はテクスチャ
+	// 定数用レジスタ1
+	descTblRange[0].NumDescriptors = 1; // 定数1
+	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;//種別は定数
 	descTblRange[0].BaseShaderRegister = 0;							// スロット番号
 	descTblRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-	// 定数用レジスタ1
-	descTblRange[1].NumDescriptors = 1; // 定数1
-	descTblRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;//種別は定数
-	descTblRange[1].BaseShaderRegister = 0;							// スロット番号
-	descTblRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 	// 定数用レジスタ2
-	descTblRange[2].NumDescriptors = 1;	// 定数2
-	descTblRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-	descTblRange[2].BaseShaderRegister = 1;							// スロット番号
+	descTblRange[1].NumDescriptors = 1;	// 定数2
+	descTblRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	descTblRange[1].BaseShaderRegister = 1;							// スロット番号
+	descTblRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+	//テクスチャ用レジスタ
+	descTblRange[2].NumDescriptors = 1;
+	descTblRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;	//種別はテクスチャ
+	descTblRange[2].BaseShaderRegister = 0;							// スロット番号
 	descTblRange[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
 	D3D12_ROOT_PARAMETER rootparam[2] = {};
@@ -1200,13 +1195,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// シェーダーと一個目の定数をまとめてバインドする。
 	rootparam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;	// このルートパラメータはディスクリプタテーブルですよ
 	rootparam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];			// ディスクリプタレンジのアドレス
-	rootparam[0].DescriptorTable.NumDescriptorRanges = 2;						// ディスクリプタレンジ数
+	rootparam[0].DescriptorTable.NumDescriptorRanges = 1;						// ディスクリプタレンジ数
 	rootparam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;	//全てのシェーダから見える
 
 	// 定数二つ目？？？？？？
 	rootparam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[2];
-	rootparam[1].DescriptorTable.NumDescriptorRanges = 1;
+	rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[1];
+	rootparam[1].DescriptorTable.NumDescriptorRanges = 2;
 	rootparam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
 	rootSignatureDesc.pParameters = rootparam;
@@ -1408,7 +1403,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				0
 				, basicDescHeap->GetGPUDescriptorHandleForHeapStart()
 			);
-
+			//_cmdList->SetGraphicsRootDescriptorTable(
+			//	1,
+			//	materialDescHeap->GetGPUDescriptorHandleForHeapStart()
+			//);
 			//_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
 			// 定数バッファビュー→ルートパラメータ番号1に対してディスクリプタヒープの場所をバインド
 			//_cmdList->SetGraphicsRootDescriptorTable(1, materialDescHeap->GetGPUDescriptorHandleForHeapStart());
@@ -1488,14 +1486,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				CloseHandle(event);
 			}
 
-			// キューのクリアと次のフレームでまたコマンドを溜める準備
-			_cmdAllocator->Reset();
-			_cmdList->Reset(_cmdAllocator, nullptr);
-
 			// 画面のスワップ
 			// 第1引数は垂直同期を待つとか待たないとかなんとか
 			// 第2引数はDXGI_PRESENT定数を使用して様々な指定を行うらしい。
 			_swapChain->Present(1, 0);
+
+			// キューのクリアと次のフレームでまたコマンドを溜める準備
+			_cmdAllocator->Reset();
+			_cmdList->Reset(_cmdAllocator, _pipelinestate);
 
 		}
 	}
