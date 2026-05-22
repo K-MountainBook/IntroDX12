@@ -1166,7 +1166,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	/*
-	* ディスクリプタヒープとは
+	* ディスクリプタテーブルとは
 	* ルートシグネチャを作成する際に設定する項目。
 	* ティスクリプタヒープと名前が似ているが別物。シェーダーレジスタと関連した概念。
 	* 定数バッファやテクスチャなどをCPU-GPU間でやりとりする際に、レジスタ種別とレジスタ番号をリソースに割り当てて
