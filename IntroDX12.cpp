@@ -36,7 +36,7 @@ IDXGISwapChain4* _swapChain = nullptr;
 ID3D12CommandAllocator* _cmdAllocator = nullptr;
 // コマンドリスト
 ID3D12GraphicsCommandList* _cmdList = nullptr;
-// コマンドキュー
+// コマンドキューl
 ID3D12CommandQueue* _cmdQueue = nullptr;
 
 
@@ -1209,7 +1209,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootparam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootparam[1].DescriptorTable.pDescriptorRanges = &descTblRange[1];
 	rootparam[1].DescriptorTable.NumDescriptorRanges = 2;
-	rootparam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	rootparam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
 	rootSignatureDesc.pParameters = rootparam;
 	rootSignatureDesc.NumParameters = 2;
