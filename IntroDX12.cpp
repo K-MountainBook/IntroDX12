@@ -240,6 +240,57 @@ ID3D12Resource* LoadTextureFromFile(std::string& texPath) {
 }
 
 
+ID3D12Resource* CreateWhiteTexture() {
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.VisibleNodeMask = 0;
+
+	D3D12_RESOURCE_DESC resDesc = {};
+
+	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	resDesc.Width = 4;
+	resDesc.Height = 4;
+	resDesc.DepthOrArraySize = 1;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = 1;
+	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* whiteBuff = nullptr;
+
+	auto result = _dev->CreateCommittedResource(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&whiteBuff)
+	);
+
+	if (FAILED(result)) {
+		return nullptr;
+	}
+
+	std::vector<unsigned char> data(4 * 4 * 4);
+	std::fill(data.begin(), data.end(), 0xff);
+
+	result = whiteBuff->WriteToSubresource(
+		0,
+		nullptr,
+		data.data(),
+		4 * 4,
+		data.size()
+	);
+
+	return whiteBuff;
+}
+
+
 #ifdef _DEBUG
 /// <summary>
 /// デバッグの場合はmain関数
@@ -1068,6 +1119,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	srvDesc.Texture2D.MipLevels = 1;							//ミップマップは使用しないので1
 
 	// 開始地点を記録
+	auto whiteTex = CreateWhiteTexture();
 	auto matDescHeapH = materialDescHeap->GetCPUDescriptorHandleForHeapStart();
 	auto incSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	for (int i = 0; i < materialNum; ++i) {
@@ -1079,21 +1131,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		matCBVDesc.BufferLocation += materialBufferSize;
 
 		// シェーダリソースビューに対して値のセットを行う
-		if (textureResources[i] != nullptr) {
-			srvDesc.Format = textureResources[i]->GetDesc().Format;
+		if (textureResources[i] == nullptr) {
+			srvDesc.Format = whiteTex->GetDesc().Format;
+			_dev->CreateShaderResourceView(
+				whiteTex,
+				&srvDesc,
+				matDescHeapH
+			);
 		}
 		else {
-			srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			srvDesc.Format = textureResources[i]->GetDesc().Format;
+			_dev->CreateShaderResourceView(
+				textureResources[i],
+				&srvDesc,
+				matDescHeapH
+			);
 		}
-
-		_dev->CreateShaderResourceView(
-			textureResources[i],
-			&srvDesc,
-			matDescHeapH
-		);
-
 		matDescHeapH.ptr += incSize;
-
 	}
 
 	// グラフィックスパイプライン
@@ -1175,17 +1229,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	* ルートシグネチャ作成時にD3D12_ROOT_SIGNATURE_DESCオブジェクトにルートパラメータを設定して利用する。
 	*/
 	D3D12_DESCRIPTOR_RANGE descTblRange[3] = {};
-	// 定数用レジスタ1
+	// 定数用レジスタ1→レジスタb0:座標変換用
 	descTblRange[0].NumDescriptors = 1; // 定数1
 	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;//種別は定数
 	descTblRange[0].BaseShaderRegister = 0;							// スロット番号
 	descTblRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-	// 定数用レジスタ2
+	// 定数用レジスタ2→レジスタb1:マテリアル用
 	descTblRange[1].NumDescriptors = 1;	// 定数2
 	descTblRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
 	descTblRange[1].BaseShaderRegister = 1;							// スロット番号
 	descTblRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-	//テクスチャ用レジスタ
+	//テクスチャ用レジスタ→レジスタt0:テクスチャ用
 	descTblRange[2].NumDescriptors = 1;
 	descTblRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;	//種別はテクスチャ
 	descTblRange[2].BaseShaderRegister = 0;							// スロット番号
