@@ -302,13 +302,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 		D3D12_RESOURCE_BARRIER BarrierDesc = {};
-
-		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		// バックバッファが書き込み可能になるまで待つ
+		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;			// バリアはリソースの遷移に対して行う
 		BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		BarrierDesc.Transition.pResource = _backBuffers[bbIdx];
+		BarrierDesc.Transition.pResource = _backBuffers[bbIdx];				// 現在のバックバッファのインデックス（描画ターゲット）
 		BarrierDesc.Transition.Subresource = 0;
-		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;		// 遷移前はPRESENT
+		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;	// 遷移後はRENDER_TARGET
 		_cmdList->ResourceBarrier(1, &BarrierDesc);
 
 		// 取得したインデックスのビューを利用するレンダーターゲットとしてセットする
@@ -326,6 +326,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		float clearColor[] = { 1.0f, 1.0f ,0.0f ,1.0f };		// 黄色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
 
+		// バックバッファの書き込み完了を待つ
 		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 		_cmdList->ResourceBarrier(1, &BarrierDesc);
