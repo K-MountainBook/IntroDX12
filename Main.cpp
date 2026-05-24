@@ -118,12 +118,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		w.hInstance,
 		nullptr);
 
+#ifdef _DEBUG
+	EnableDebugLayer();
+#endif
+
 	// アダプタ列挙用
 	vector<IDXGIAdapter*> adapters;
 	// 特定のアダプタ格納用変数
 	IDXGIAdapter* tmpAdapter = nullptr;
 	//刺さっているグラフィックアダプタの列挙
+#ifdef _DEBUG
+	HRESULT result = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_dxgiFactory));
+#else
 	HRESULT result = CreateDXGIFactory1(IID_PPV_ARGS(&_dxgiFactory));
+#endif // _DEBUG
+
 
 	for (int i = 0; _dxgiFactory->EnumAdapters(i, &tmpAdapter) != DXGI_ERROR_NOT_FOUND; ++i) {
 		// 検出されたグラフィックアダプタを全て格納
@@ -178,6 +187,95 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// キューの作成
 	result = _dev->CreateCommandQueue(&cmdQueueDesc, IID_PPV_ARGS(&_cmdQueue));
 
+	// スワップチェインの生成
+	DXGI_SWAP_CHAIN_DESC1 swapchainDesc = {};
+
+	swapchainDesc.Width = window_width;
+	swapchainDesc.Height = window_height;
+	swapchainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	swapchainDesc.Stereo = false;
+	swapchainDesc.SampleDesc.Count = 1;
+	swapchainDesc.SampleDesc.Quality = 0;
+	swapchainDesc.BufferUsage = DXGI_USAGE_BACK_BUFFER;
+	swapchainDesc.BufferCount = 2;
+
+	// バックバッファの伸縮可能にする
+	swapchainDesc.Scaling = DXGI_SCALING_STRETCH;
+
+	// フリップ後はすぐに破棄する
+	swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+
+	// 指定なし
+	swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+
+	// ウィンドウ＜＞フルスクリーンの切り替えが可能
+	swapchainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+	result = _dxgiFactory->CreateSwapChainForHwnd(
+		_cmdQueue,
+		hwnd,
+		&swapchainDesc,
+		nullptr,
+		nullptr,
+		// 本来はQueryInterfaceなどを用いてIDXGISwapChaing4*への変換チェックを行うが
+		// 解りやすさ重視のためキャストを利用
+		(IDXGISwapChain1**)&_swapChain
+	);
+
+
+
+	// レンダーターゲットビュー(RTV)
+	// バックバッファに対してデータの書き込みを行う
+	// バッファに格納されたデータの使い方を定義するのがビュー
+
+	// DirectX12では、ビューはディスクリプタヒープから作成されるため
+	// まずはディスクリプタヒープを作成する。
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;		// レンダーターゲットビュー
+	heapDesc.NodeMask = 0;								// 複数のGPUがある場合に数値を指定
+	heapDesc.NumDescriptors = 2;						// ディスクリプタの数を表す、
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;	// シェーダーから見える必要がないのでNONE
+
+	ID3D12DescriptorHeap* rtvHeaps = nullptr;
+
+	result = _dev->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&rtvHeaps));
+
+	//Swapchain内のバッファとビューを紐づける処理
+	DXGI_SWAP_CHAIN_DESC swcDesc = {};
+
+	// これはバックバッファの値を取得する別解
+	result = _swapChain->GetDesc(&swcDesc);
+
+	// バックバッファの数ID3D12Resourceを作成
+	vector<ID3D12Resource*> _backBuffers(swcDesc.BufferCount);
+
+	// 先頭のアドレスを取得
+	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+	// メインループの前だからここでバッファを二つ作る
+	for (int idx = 0; idx < swcDesc.BufferCount; ++idx) {
+		// スワップチェインの中身とID3D12Resourceを関連付ける
+		result = _swapChain->GetBuffer(idx, IID_PPV_ARGS(&_backBuffers[idx]));
+		// サイズを取得してその分だけptrメンバーに加算してポインタを進める
+		handle.ptr += idx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		// レンダービューの作成
+		_dev->CreateRenderTargetView(
+			_backBuffers[idx],
+			nullptr,
+			handle
+		);
+	}
+
+	// フェンスの作成
+	ID3D12Fence* _fence = nullptr;
+	UINT64 _fenceVal = 0;
+
+	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
+
+	// チェック用
+	if (FAILED(result)) {
+		return -1;
+	}
 
 	// ウィンドウの表示
 	ShowWindow(hwnd, SW_SHOW);
@@ -198,6 +296,59 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		if (msg.message == WM_QUIT) {
 			break;
 		}
+
+		// 次に表示するバッファのインデックスが取得出来ればOK
+		UINT bbIdx = _swapChain->GetCurrentBackBufferIndex();
+
+
+		D3D12_RESOURCE_BARRIER BarrierDesc = {};
+
+		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+		BarrierDesc.Transition.pResource = _backBuffers[bbIdx];
+		BarrierDesc.Transition.Subresource = 0;
+		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		_cmdList->ResourceBarrier(1, &BarrierDesc);
+
+		// 取得したインデックスのビューを利用するレンダーターゲットとしてセットする
+		auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+		rtvH.ptr += static_cast<ULONG_PTR>(bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
+		// レンダーたーげとを設定する
+		_cmdList->OMSetRenderTargets(
+			1,				// レンダーターゲットの数
+			&rtvH,			// レンダーターゲットのハンドル
+			true,			// レンダーターゲットが複数の際に連続しているか
+			nullptr			// 深度ステンシルバッファビューのハンドル
+		);
+
+		// レンダーターゲットを特定の色でクリア
+		float clearColor[] = { 1.0f, 1.0f ,0.0f ,1.0f };		// 黄色
+		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+
+		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+		_cmdList->ResourceBarrier(1, &BarrierDesc);
+
+		// コマンドリストは実行する前にクローズする必要がある
+		_cmdList->Close();
+
+		// 実行
+		ID3D12CommandList* cmdLists[] = { _cmdList };
+		_cmdQueue->ExecuteCommandLists(1, cmdLists);
+
+		_cmdQueue->Signal(_fence, ++_fenceVal);
+
+		while (_fence->GetCompletedValue() != _fenceVal) {
+			;
+		}
+
+		// コマンドアロケータ、コマンドリストの後始末
+		_cmdAllocator->Reset();
+		_cmdList->Reset(_cmdAllocator, nullptr);
+
+		// バッファの入れ替え
+		_swapChain->Present(1, 0);
 	}
 #pragma endregion
 	UnregisterClass(w.lpszClassName, w.hInstance);
