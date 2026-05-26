@@ -221,6 +221,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 #pragma endregion
 
+#pragma region テクスチャ用画像のロード
+	result = CoInitializeEx(0, COINIT_MULTITHREADED);
+
+	TexMetadata metadata = {};
+	ScratchImage scratchImg = {};
+
+	result = LoadFromWICFile(
+		L"img/textest.png",
+		WIC_FLAGS_NONE,
+		&metadata,
+		scratchImg
+	);
+
+	auto img = scratchImg.GetImage(0, 0, 0);
+
+#pragma endregion
+
 	// コマンドリストの作成とコマンドアロケータ
 	// コマンドリストはGPUに対する命令のインターフェイス
 	// コマンドアロケータが本体。命令オブジェクトはアロケータにPushBackされていく。
@@ -449,6 +466,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	heapProp.CreationNodeMask = 0;		// 単一アダプタのため0
 	heapProp.VisibleNodeMask = 0;		// 単一アダプタのため0
 
+	// ノイズ版
+	/*
 	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	resDesc.Width = 256;
 	resDesc.Height = 256;
@@ -458,9 +477,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	resDesc.MipLevels = 1;
 	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	*/
+	// 画像テクスチャ版
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	resDesc.Format = metadata.format;
+	resDesc.Width = metadata.width;
+	resDesc.Height = metadata.height;
+	resDesc.DepthOrArraySize = metadata.arraySize;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = metadata.mipLevels;
+	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	ID3D12Resource* texBuff = nullptr;
+
 	result = _dev->CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
@@ -470,13 +502,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&texBuff)
 	);
 
-
+	// ノイズ版
+	/*
 	result = texBuff->WriteToSubresource(
 		0,
 		nullptr,
 		texturedata.data(),
 		sizeof(TexRGBA) * 256,					// 1ラインのサイズ
 		sizeof(TexRGBA) * texturedata.size()	// 全サイズ
+	);
+	*/
+	// 画像テクスチャ版
+	result = texBuff->WriteToSubresource(
+		0,
+		nullptr,
+		img->pixels,		// 元データのアドレス
+		img->rowPitch,		// 1ラインのサイズ
+		img->slicePitch		// 1枚のサイズ
 	);
 	/* ここまででテクスチャVRAMに転送完了 */
 #pragma endregion
@@ -499,7 +541,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 上記で作成したディスクリプタヒープ上にシェーダーリソースビューを作成する
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;	// rgbaを正規化
+	srvDesc.Format = metadata.format;	// rgbaを正規化→画像読み込みの際は画像のメタデータに合わせる
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;		// RGBAをどのようにマッピングするか指定する
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		// 2Dテクスチャ
 	srvDesc.Texture2D.MipLevels = 1;
