@@ -65,12 +65,12 @@ D3D_FEATURE_LEVEL levels[] =
 //};
 
 //4角形
-XMFLOAT3 vertices[] = {
-	{-0.4f, -0.7f, 0.0f},
-	{-0.4f,  0.7f, 0.0f},
-	{ 0.4f, -0.7f, 0.0f},
-	{ 0.4f,  0.7f, 0.0f},
-};
+//XMFLOAT3 vertices[] = {
+//	{-0.4f, -0.7f, 0.0f},
+//	{-0.4f,  0.7f, 0.0f},
+//	{ 0.4f, -0.7f, 0.0f},
+//	{ 0.4f,  0.7f, 0.0f},
+//};
 
 // インデックスデータ
 // 上の4角形配列をどの順番で使うかの添え字
@@ -79,6 +79,28 @@ unsigned short indeces[] = {
 	2, 1, 3
 };
 
+// 頂点データの構造体を追加
+struct Vertex {
+	XMFLOAT3 pos;	// xyz座標
+	XMFLOAT2 uv;	// uv座標
+};
+
+// xyz座標にuv座標も加えた構造体の配列を作る
+Vertex vertices[] =
+{
+	{{-0.4f, -0.7f, 0.0f},{0.0f,1.0f}},
+	{{-0.4f,  0.7f, 0.0f},{0.0f,0.0f}},
+	{{ 0.4f, -0.7f, 0.0f},{1.0f,1.0f}},
+	{{ 0.4f,  0.7f, 0.0f},{1.0f,0.0f}},
+};
+
+// テクスチャデータの作成
+struct TexRGBA
+{
+	unsigned char R, G, B, A;
+};
+
+std::vector<TexRGBA> texturedata(256 * 256);
 
 // コンソールにデバッグ情報を表示
 void DebugOutputFormatString(const char* format, ...) {
@@ -189,6 +211,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 	}
+
+#pragma region ランダムなテクスチャデータを作成（一時的な処理
+	for (auto& rgba : texturedata) {
+		rgba.R = rand() % 256;
+		rgba.G = rand() % 256;
+		rgba.B = rand() % 256;
+		rgba.A = 255;
+	}
+#pragma endregion
 
 	// コマンドリストの作成とコマンドアロケータ
 	// コマンドリストはGPUに対する命令のインターフェイス
@@ -333,7 +364,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma endregion
 
 #pragma region 頂点バッファに対して頂点情報のコピー
-	XMFLOAT3* vertMap = nullptr;
+	//XMFLOAT3* vertMap = nullptr;
+	// 頂点データにuv座標を追加したため型の変更(chapter4)
+	Vertex* vertMap = nullptr;
 
 	result = vertBuff->Map(
 		0,
@@ -380,7 +413,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		{
 			"POSITION",
 			0,
-			DXGI_FORMAT_R32G32B32_FLOAT,
+			DXGI_FORMAT_R32G32B32_FLOAT,	// xyz座標は3つ必要
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		//シェーダーの情報追加
+		{
+			"TEXCOORD",
+			0,
+			DXGI_FORMAT_R32G32_FLOAT,		// UV座標は二つしか必要ない
 			0,
 			D3D12_APPEND_ALIGNED_ELEMENT,
 			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
@@ -396,6 +439,79 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ibView.Format = DXGI_FORMAT_R16_UINT;
 	ibView.SizeInBytes = sizeof(indeces);
 #pragma endregion
+
+#pragma region テクスチャバッファの作成
+	// WriteToSubresourceで転送するためのヒープの設定
+
+	heapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;	// 転送はL0、CPU側から直接行う
+	heapProp.CreationNodeMask = 0;		// 単一アダプタのため0
+	heapProp.VisibleNodeMask = 0;		// 単一アダプタのため0
+
+	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	resDesc.Width = 256;
+	resDesc.Height = 256;
+	resDesc.DepthOrArraySize = 1;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = 1;
+	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* texBuff = nullptr;
+	result = _dev->CreateCommittedResource(
+		&heapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,		// テクスチャ用を指定
+		nullptr,
+		IID_PPV_ARGS(&texBuff)
+	);
+
+
+	result = texBuff->WriteToSubresource(
+		0,
+		nullptr,
+		texturedata.data(),
+		sizeof(TexRGBA) * 256,					// 1ラインのサイズ
+		sizeof(TexRGBA) * texturedata.size()	// 全サイズ
+	);
+	/* ここまででテクスチャVRAMに転送完了 */
+#pragma endregion
+
+#pragma region ディスクリプタヒープ関連処理
+
+	ID3D12DescriptorHeap* texDescHeap = nullptr;
+	D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
+
+	descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;		// シェーダーから見えるようにする
+	descHeapDesc.NodeMask = 0;
+	descHeapDesc.NumDescriptors = 1;									// ビューは今のところ一つだけ
+	descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;			// シェーダーリソースビュー用
+
+	// 生成
+	result = _dev->CreateDescriptorHeap(
+		&descHeapDesc,
+		IID_PPV_ARGS(&texDescHeap)
+	);
+
+	// 上記で作成したディスクリプタヒープ上にシェーダーリソースビューを作成する
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;	// rgbaを正規化
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;		// RGBAをどのようにマッピングするか指定する
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		// 2Dテクスチャ
+	srvDesc.Texture2D.MipLevels = 1;
+
+	_dev->CreateShaderResourceView(
+		texBuff,							// ビューと関連付けるバッファ
+		&srvDesc,							// テクスチャ設定情報
+		texDescHeap->GetCPUDescriptorHandleForHeapStart()		// ヒープのどこに割り当てるか
+	);
+
+#pragma endregion
+
 
 #pragma region シェーダーファイルの読み込み等
 	// エラー用
@@ -458,13 +574,56 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #endif
 		}
 	}
+#pragma endregion
+
+#pragma region ディスクリプタテーブルレンジの作成
+	D3D12_DESCRIPTOR_RANGE descTblRange = {};
+
+	descTblRange.NumDescriptors = 1;		// テクスチャの数（今回は1）
+	descTblRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;		// 種類はテクスチャ
+	descTblRange.BaseShaderRegister = 0;				// テクスチャレジスタ番号0(t0)
+	descTblRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;	// とりあえず「連続したディスクリプタレンジが前の直後に来る」を指定
+
+#pragma endregion
+
+#pragma region ルートパラメータの作成
+	D3D12_ROOT_PARAMETER rootParam = {};
+
+	rootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;				// ピクセルシェーダから見ることができる
+
+	rootParam.DescriptorTable.pDescriptorRanges = &descTblRange;
+	rootParam.DescriptorTable.NumDescriptorRanges = 1;
+
+#pragma endregion
+
+#pragma region サンプラーの作成
+	D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
+
+	samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP; // 横（U)方向の繰り返し
+	samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP; // 縦（V)方向の繰り返し
+	samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP; // 奥（W)方向の繰り返し
+	samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;		// ボーダーカラーは黒
+	samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;		// 線形補間
+	samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;		// ミップマップの最大値
+	samplerDesc.MinLOD = 0.0f;					// ミップマップの最小値
+	samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;		// ピクセルシェーダから見えるようにする
+	samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;			// リサンプリングしない
+#pragma endregion
 
 #pragma region パイプラインの作成
 	ID3D12RootSignature* rootsignature = nullptr;
+
 #pragma region ルートシグネチャ
 	// ルートシグネチャとは頂点情報以外のデータをグラフィックスパイプラインの外からシェーダーに送り込む仕組み
 	D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+	rootSignatureDesc.pParameters = &rootParam;
+	rootSignatureDesc.NumParameters = 1;
+
+	rootSignatureDesc.pStaticSamplers = &samplerDesc;
+	rootSignatureDesc.NumStaticSamplers = 1;
 
 	ID3DBlob* rootSigBlob = nullptr;
 	// バイナリコードの作成
@@ -610,6 +769,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->SetPipelineState(_piplinestate);
 		// ルートシグネチャの指定
 		_cmdList->SetGraphicsRootSignature(rootsignature);
+		// ディスクリプタヒープのセット
+		_cmdList->SetDescriptorHeaps(1, &texDescHeap);
+
+		// ルートパラメータとディスクリプタヒープの関連付け
+		_cmdList->SetGraphicsRootDescriptorTable(
+			0,			// ルートパラメータインデックス
+			texDescHeap->GetGPUDescriptorHandleForHeapStart()	// ヒープアドレス
+		);
+
 		// ビューポート、シザー矩形の設定
 		_cmdList->RSSetViewports(1, &viewPort);
 		_cmdList->RSSetScissorRects(1, &scissorRect);

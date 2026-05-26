@@ -134,6 +134,7 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="BasicHeader.hlsli" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
