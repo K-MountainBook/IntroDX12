@@ -57,11 +57,28 @@ D3D_FEATURE_LEVEL levels[] =
 	D3D_FEATURE_LEVEL_11_0,
 };
 
+// 三角形の頂点モデル
+//XMFLOAT3 vertices[] = {
+//	{-0.5f, -0.7f, 0.0f},
+//	{ 0.0f,  0.7f, 0.0f},
+//	{ 0.5f, -0.7f, 0.0f},
+//};
+
+//4角形
 XMFLOAT3 vertices[] = {
-	{-1.0f, -1.0f, 0.0f},
-	{-1.0f,  1.0f, 0.0f},
-	{ 1.0f, -1.0f, 0.0f},
+	{-0.4f, -0.7f, 0.0f},
+	{-0.4f,  0.7f, 0.0f},
+	{ 0.4f, -0.7f, 0.0f},
+	{ 0.4f,  0.7f, 0.0f},
 };
+
+// インデックスデータ
+// 上の4角形配列をどの順番で使うかの添え字
+unsigned short indeces[] = {
+	0, 1, 2,
+	2, 1, 3
+};
+
 
 // コンソールにデバッグ情報を表示
 void DebugOutputFormatString(const char* format, ...) {
@@ -329,6 +346,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertBuff->Unmap(0, nullptr);
 #pragma endregion
 
+#pragma region インデックスバッファーの作成
+	ID3D12Resource* idxBuff = nullptr;
+
+	// 頂点バッファーの設定を使いまわす（サイズ以外）
+	resDesc.Width = sizeof(indeces);
+	result = _dev->CreateCommittedResource(
+		&heapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&idxBuff)
+	);
+
+	unsigned short* mappedIdx = nullptr;
+	idxBuff->Map(0, nullptr, (void**)&mappedIdx);
+	copy(begin(indeces), end(indeces), mappedIdx);
+	idxBuff->Unmap(0, nullptr);
+#pragma endregion
+
 #pragma region 頂点バッファビューの作成
 	// 何バイトのデータが存在するのか？１頂点あたり何バイトなのか？などを知らせるデータ
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
@@ -350,6 +387,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			0
 		},
 	};
+#pragma endregion
+
+#pragma region インデックスバッファビューの作成
+	D3D12_INDEX_BUFFER_VIEW ibView = {};
+
+	ibView.BufferLocation = idxBuff->GetGPUVirtualAddress();
+	ibView.Format = DXGI_FORMAT_R16_UINT;
+	ibView.SizeInBytes = sizeof(indeces);
 #pragma endregion
 
 #pragma region シェーダーファイルの読み込み等
@@ -491,6 +536,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma endregion
 	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
 
+	D3D12_VIEWPORT viewPort = {};
+
+	viewPort.Width = window_width;
+	viewPort.Height = window_height;
+	viewPort.TopLeftX = 0;
+	viewPort.TopLeftY = 0;
+	viewPort.MaxDepth = 1.0f;
+	viewPort.MinDepth = 0.0f;
+
+	D3D12_RECT scissorRect = {};
+
+	scissorRect.top = 0;
+	scissorRect.left = 0;
+	scissorRect.right = scissorRect.left + window_width;
+	scissorRect.bottom = scissorRect.top + window_height;
+
 	// チェック用
 	if (FAILED(result)) {
 		return -1;
@@ -542,8 +603,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		);
 
 		// レンダーターゲットを特定の色でクリア
-		float clearColor[] = { 1.0f, 1.0f ,0.0f ,1.0f };		// 黄色
+		float clearColor[] = { 0.0f, 0.0f ,0.5f ,1.0f };		// 黄色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+
+		// パイプラインステートの指定
+		_cmdList->SetPipelineState(_piplinestate);
+		// ルートシグネチャの指定
+		_cmdList->SetGraphicsRootSignature(rootsignature);
+		// ビューポート、シザー矩形の設定
+		_cmdList->RSSetViewports(1, &viewPort);
+		_cmdList->RSSetScissorRects(1, &scissorRect);
+		// プリミティブトポロジの設定
+		_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		// 頂点バッファの指定
+		_cmdList->IASetVertexBuffers(0, 1, &vbView);
+		// インデクスバッファの指定
+		_cmdList->IASetIndexBuffer(&ibView);
+		// 描画
+		// _cmdList->DrawInstanced(6, 1, 0, 0);				// インデックス情報を使わない描画
+		_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);			// インデクス情報を使う描画
 
 		// バックバッファの書き込み完了を待つ
 		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
