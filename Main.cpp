@@ -326,6 +326,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// バックバッファの数ID3D12Resourceを作成
 	vector<ID3D12Resource*> _backBuffers(swcDesc.BufferCount);
 
+	// SRGBレンダーターゲットビュー設定
+	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+
 	// 先頭のアドレスを取得
 	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
 	// メインループの前だからここでバッファを二つ作る
@@ -337,7 +342,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// レンダービューの作成
 		_dev->CreateRenderTargetView(
 			_backBuffers[idx],
-			nullptr,
+			//nullptr,
+			&rtvDesc,
 			handle
 		);
 	}
@@ -350,11 +356,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 #pragma region 頂点バッファの設定
 	// 頂点ヒープ
+	/*
 	D3D12_HEAP_PROPERTIES heapProp = {};
 
 	heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;							// CPUからアクセスできるヒープを表す。Mapメソッドでアクセス可能
 	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;		// CPUのページング設定
 	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;		// メモリプールの場所を示す
+	*/
+	// d3dx12.hを使う様に変更
+	ID3D12Resource* vertBuff = nullptr;
+
+	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto verHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices));
+
 
 	D3D12_RESOURCE_DESC resDesc = {};
 	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;	// バッファに利用するのでバッファを指定
@@ -368,16 +382,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;				// NONEでよい
 	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;		// メモリが最初から終わりまで連続していることを示す値を指定
 
-	ID3D12Resource* vertBuff = nullptr;
+	// ID3D12Resource* vertBuff = nullptr;
+
+	//result = _dev->CreateCommittedResource(
+	//	&heapProp,								// ヒープ構造体のアドレス
+	//	D3D12_HEAP_FLAG_NONE,					// とりあえず指定なしを設定
+	//	&resDesc,								// リソース構造体のアドレス
+	//	D3D12_RESOURCE_STATE_GENERIC_READ,		// GPU側からは読み取り専用
+	//	nullptr,								// 使わないのでnullptrを設定
+	//	IID_PPV_ARGS(&vertBuff)					// vertBuffにデータを書き出し
+	//);
 
 	result = _dev->CreateCommittedResource(
-		&heapProp,								// ヒープ構造体のアドレス
-		D3D12_HEAP_FLAG_NONE,					// とりあえず指定なしを設定
-		&resDesc,								// リソース構造体のアドレス
-		D3D12_RESOURCE_STATE_GENERIC_READ,		// GPU側からは読み取り専用
-		nullptr,								// 使わないのでnullptrを設定
-		IID_PPV_ARGS(&vertBuff)					// vertBuffにデータを書き出し
+		&heapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&verHeapDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&vertBuff)
 	);
+
 #pragma endregion
 
 #pragma region 頂点バッファに対して頂点情報のコピー
@@ -521,6 +545,33 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		img->slicePitch		// 1枚のサイズ
 	);
 	/* ここまででテクスチャVRAMに転送完了 */
+#pragma endregion
+
+
+#pragma region 定数バッファの作成
+
+	// 例
+	XMMATRIX matrix = XMMatrixIdentity();
+
+	ID3D12Resource* constBuff = nullptr;
+
+	auto constHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto constResDescBuff = CD3DX12_RESOURCE_DESC::Buffer((sizeof(matrix) + 0xff) & ~0xff);
+
+	_dev->CreateCommittedResource(
+		&constHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&constResDescBuff,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&constBuff)
+	);
+
+	XMMATRIX* mapMatrix;
+
+	result = constBuff->Map(0, nullptr, (void**)&mapMatrix);
+	*mapMatrix = matrix;
+
 #pragma endregion
 
 #pragma region ディスクリプタヒープ関連処理
@@ -722,7 +773,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// レンダーターゲットの設定
 	gpipeline.NumRenderTargets = 1;				// 数は一つ
-	gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;	// 上記指定のレンダーターゲットに対して指定
+	gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;	// 上記指定のレンダーターゲットに対して指定
 
 	// アンチエイリアスの設定 とりあえず最低
 	gpipeline.SampleDesc.Count = 1;
@@ -784,6 +835,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		D3D12_RESOURCE_BARRIER BarrierDesc = {};
 		// バックバッファが書き込み可能になるまで待つ
+
+		/*
 		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;			// バリアはリソースの遷移に対して行う
 		BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 		BarrierDesc.Transition.pResource = _backBuffers[bbIdx];				// 現在のバックバッファのインデックス（描画ターゲット）
@@ -791,6 +844,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;		// 遷移前はPRESENT
 		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;	// 遷移後はRENDER_TARGET
 		_cmdList->ResourceBarrier(1, &BarrierDesc);
+		*/
+		// CD3DX12ヘルパーを使う場合
+		auto resBarrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			_backBuffers[bbIdx],
+			D3D12_RESOURCE_STATE_PRESENT,
+			D3D12_RESOURCE_STATE_RENDER_TARGET
+		);
+
+		_cmdList->ResourceBarrier(
+			1,
+			&resBarrier
+		);
 
 		// 取得したインデックスのビューを利用するレンダーターゲットとしてセットする
 		auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
@@ -834,9 +899,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);			// インデクス情報を使う描画
 
 		// バックバッファの書き込み完了を待つ
-		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-		_cmdList->ResourceBarrier(1, &BarrierDesc);
+		// CD3DX12ヘルパーを使う場合これは不要
+		//BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		//BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+		//_cmdList->ResourceBarrier(1, &BarrierDesc);
 
 		// コマンドリストは実行する前にクローズする必要がある
 		_cmdList->Close();
