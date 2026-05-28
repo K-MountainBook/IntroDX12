@@ -95,7 +95,7 @@ struct PMDHeader
 
 
 // PMD頂点用構造体
-struct PDMVertex 
+struct PDMVertex
 {
 	XMFLOAT3 pos;		// 頂点座標
 	XMFLOAT3 normal;	// 法線ベクトル
@@ -106,6 +106,49 @@ struct PDMVertex
 };
 // 頂点データのサイズ
 constexpr size_t pmdvertex_size = 38;
+
+#pragma pack(1)
+// PMDマテリアル構造体
+struct PMDMaterial
+{
+	XMFLOAT3 diffuse;
+	float alpha;
+	float specularity;
+	XMFLOAT3 specular;
+	XMFLOAT3 ambient;
+	unsigned char toonIdx;
+	unsigned char edgeFlg;
+	// 2バイトパディング
+	unsigned int indicesNum;	// マテリアルが割り当てられるインデックス数
+	char texFilePath[20];		// テクスチャファイルパス+α
+};
+#pragma pack()
+
+// シェーダーに投げるマテリアルデータ
+struct MaterialForHlsl
+{
+	XMFLOAT3 diffuse;
+	float alpha;
+	XMFLOAT3 specular;
+	float specularity;
+	XMFLOAT3 ambient;
+};
+
+// それ以外のマテリアルデータ
+struct AdditionalMaterial
+{
+	string texPath;
+	unsigned char toonIdx;
+	unsigned char edgeFlg;
+
+};
+
+struct Material
+{
+	unsigned int indicesNum;	// インデックス数
+	MaterialForHlsl material;
+	AdditionalMaterial additional;
+};
 
 // xyz座標にuv座標も加えた構造体の配列を作る
 // 結果ワールド座標
@@ -247,14 +290,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 #pragma region モデルデータの読み込み
-	
+
 	char signature[3] = {};
 	unsigned int vertNum;		// 頂点数
 	unsigned int indicesNum;	// インデックス数
 	vector<unsigned short> indices;	// インデックス情報
 	PMDHeader pmdHeader;
 	FILE* fp = nullptr;
-	
+
 	fopen_s(&fp, "Model/初音ミク.pmd", "rb");
 
 	if (fp == nullptr) {
@@ -276,6 +319,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indices.resize(indicesNum);
 	fread(indices.data(), indices.size() * sizeof(indices[0]), 1, fp);
 
+	// マテリアルの読み込み
+	unsigned int materialNum;
+	fread(&materialNum, sizeof(materialNum), 1, fp);
+	std::vector<PMDMaterial> pmdMaterials(materialNum);
+	fread(pmdMaterials.data(), pmdMaterials.size() * sizeof(PMDMaterial), 1, fp);
+
 	fclose(fp);
 
 #pragma endregion
@@ -288,6 +337,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		rgba.A = 255;
 	}
 #pragma endregion
+
+#pragma region マテリアルデータを構造体にコピーする
+	vector<Material> materials(pmdMaterials.size());
+
+	for (int i = 0; i < pmdMaterials.size(); ++i) {
+		materials[i].indicesNum = pmdMaterials[i].indicesNum;
+		materials[i].material.diffuse = pmdMaterials[i].diffuse;
+		materials[i].material.alpha = pmdMaterials[i].alpha;
+		materials[i].material.specular = pmdMaterials[i].specular;
+		materials[i].material.specularity = pmdMaterials[i].specularity;
+		materials[i].material.ambient = pmdMaterials[i].ambient;
+	}
+#pragma	endregion
 
 #pragma region テクスチャ用画像のロード
 	result = CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -533,6 +595,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vbView.SizeInBytes = vertices.size();						// 総バイト数
 	vbView.StrideInBytes = pmdvertex_size;					// 1頂点あたりのバイト数
 #pragma endregion
+
 
 #pragma region 頂点データのレイアウトを設定
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
@@ -783,7 +846,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma region 深度バッファの作成
 	D3D12_RESOURCE_DESC depthResDesc = {};
 	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;	// 2次元テクスチャデータ
-	depthResDesc.Width = window_width;							
+	depthResDesc.Width = window_width;
 	depthResDesc.Height = window_height;
 	depthResDesc.DepthOrArraySize = 1;								// テクスチャ配列でも3Dテクスチャでもない
 	depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;					// 深度値書き込み用
@@ -830,6 +893,37 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		&dsView,										// ビューの作成先
 		dsvHeap->GetCPUDescriptorHandleForHeapStart()	// ヒープの先頭アドレス
 	);
+
+#pragma endregion
+
+#pragma region マテリアルバッファの作成
+	auto materialBuffSize = sizeof(MaterialForHlsl);
+	materialBuffSize = (materialBuffSize + 0xff) & ~0xff;
+
+	ID3D12Resource* materialBuff = nullptr;
+
+	auto matHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto matResDescBuff = CD3DX12_RESOURCE_DESC::Buffer(materialBuffSize * materialNum);
+
+	result = _dev->CreateCommittedResource(
+		&matHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&matResDescBuff,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&materialBuff)
+	);
+
+	// マップにコピー
+	char* mapMaterial = nullptr;
+	result = materialBuff->Map(0, nullptr, (void**)&mapMaterial);
+	for (auto& m : materials) {
+		*((MaterialForHlsl*)mapMaterial) = m.material;
+		mapMaterial += materialBuffSize;
+	}
+	materialBuff->Unmap(0, nullptr);
+
+	// ディスクリプタヒープを作成する
 
 #pragma endregion
 
@@ -1023,10 +1117,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	gpipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;				// 小さい方を使用する
 
 	// グラフィックスパイプラインステートオブジェクトの生成
-	ID3D12PipelineState* _piplinestate = nullptr;
+	ID3D12PipelineState* _pipelinestate = nullptr;
 	result = _dev->CreateGraphicsPipelineState(
 		&gpipeline,
-		IID_PPV_ARGS(&_piplinestate)
+		IID_PPV_ARGS(&_pipelinestate)
 	);
 #pragma endregion
 	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
@@ -1119,12 +1213,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			&dsvH			// 深度ステンシルバッファビューのハンドル
 		);
 
+		if (_pipelinestate == nullptr) {
+			return -1;
+		}
+
 		// レンダーターゲットを特定の色でクリア
 		float clearColor[] = { 1.0f, 1.0f ,1.0f ,1.0f };		// 黄色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
 
 		// パイプラインステートの指定
-		_cmdList->SetPipelineState(_piplinestate);
+		_cmdList->SetPipelineState(_pipelinestate);
 		// ルートシグネチャの指定
 		_cmdList->SetGraphicsRootSignature(rootsignature);
 		// ディスクリプタヒープのセット
@@ -1143,7 +1241,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		// ルートパラメータとディスクリプタヒープの関連付けその弐
 		_cmdList->SetGraphicsRootDescriptorTable(
-			1, 
+			1,
 			heapHandle
 		);
 
