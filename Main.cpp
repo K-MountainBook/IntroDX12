@@ -86,13 +86,19 @@ struct Vertex {
 };
 
 // xyz座標にuv座標も加えた構造体の配列を作る
+// 結果ワールド座標
 Vertex vertices[] =
 {
-	{{-0.4f, -0.7f, 0.0f},{0.0f,1.0f}},
-	{{-0.4f,  0.7f, 0.0f},{0.0f,0.0f}},
-	{{ 0.4f, -0.7f, 0.0f},{1.0f,1.0f}},
-	{{ 0.4f,  0.7f, 0.0f},{1.0f,0.0f}},
+	{{  -1.0f,  -1.0f, 0.0f},{0.0f,1.0f}},
+	{{  -1.0f,   1.0f, 0.0f},{0.0f,0.0f}},
+	{{   1.0f,  -1.0f, 0.0f},{1.0f,1.0f}},
+	{{   1.0f,   1.0f, 0.0f},{1.0f,0.0f}},
 };
+
+// ビュー座標系
+XMFLOAT3 eye(0, 0, -5);
+XMFLOAT3 target(0, 0, 0);
+XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
 struct TexRGBA
@@ -553,6 +559,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 例
 	XMMATRIX matrix = XMMatrixIdentity();
 
+	//matrix.r[0].m128_f32[0] =  2.0f / window_width;
+	//matrix.r[1].m128_f32[1] = -2.0f / window_height;
+
+	//matrix.r[3].m128_f32[0] = -1.0f;
+	//matrix.r[3].m128_f32[1] = 1.0f;
+
+	// オブジェクトに回転を加える
+	auto worldMatrix = XMMatrixRotationY(XM_PIDIV4);
+	XMMATRIX viewMatrix;
+	XMMATRIX projMatrix;
+	// 視錐台
+	{
+		// カメラ座標・向き
+		viewMatrix = XMMatrixLookAtLH(
+			XMLoadFloat3(&eye),			// 視点座標
+			XMLoadFloat3(&target),		// 注視点座標
+			XMLoadFloat3(&up)			// 上方向を示すベクトル
+		);
+
+		// プロジェクション（見え方）
+		projMatrix = XMMatrixPerspectiveFovLH(
+			XM_PIDIV2,		// 画角(FOV)
+			static_cast<float>(window_width) / static_cast<float>(window_height),	// アスペクト比
+			1.0f,				// 見える範囲の手前(near面)
+			10.0f				// 見える範囲の奥(far面)
+		);
+	}
+
 	ID3D12Resource* constBuff = nullptr;
 
 	auto constHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -845,7 +879,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #endif
 
 	MSG msg = {};
-
+	float angle = 0.0f;
 #pragma region mainloop
 	while (true) {
 		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -857,9 +891,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
+		angle += 0.1f;
+		worldMatrix = XMMatrixRotationY(angle);
+		*mapMatrix = worldMatrix * viewMatrix * projMatrix;
+
 		// 次に表示するバッファのインデックスが取得出来ればOK
 		UINT bbIdx = _swapChain->GetCurrentBackBufferIndex();
-
 
 		D3D12_RESOURCE_BARRIER BarrierDesc = {};
 		// バックバッファが書き込み可能になるまで待つ
@@ -965,5 +1002,5 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 #pragma endregion
 	UnregisterClass(w.lpszClassName, w.hInstance);
-
+	constBuff->Unmap(0, nullptr);
 }
