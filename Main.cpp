@@ -1163,7 +1163,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);		// モデルのインデックス情報を使う
 
 		// バックバッファの書き込み完了を待つ
-		// CD3DX12ヘルパーを使う場合これは不要
+		// CD3DX12ヘルパーを使う場合これは不要(Li1099らへん)
 		//BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		//BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 		//_cmdList->ResourceBarrier(1, &BarrierDesc);
