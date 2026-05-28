@@ -74,10 +74,10 @@ D3D_FEATURE_LEVEL levels[] =
 
 // インデックスデータ
 // 上の4角形配列をどの順番で使うかの添え字
-unsigned short indeces[] = {
-	0, 1, 2,
-	2, 1, 3
-};
+//unsigned short indeces[] = {
+//	0, 1, 2,
+//	2, 1, 3
+//};
 
 // 頂点データの構造体を追加
 struct Vertex {
@@ -118,8 +118,8 @@ constexpr size_t pmdvertex_size = 38;
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 0, -5);
-XMFLOAT3 target(0, 0, 0);
+XMFLOAT3 eye(0, 10, -15);
+XMFLOAT3 target(0, 10, 0);
 XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
@@ -244,6 +244,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	
 	char signature[3] = {};
 	unsigned int vertNum;		// 頂点数
+	unsigned int indicesNum;	// インデックス数
+	vector<unsigned short> indices;	// インデックス情報
 	PMDHeader pmdHeader;
 	FILE* fp = nullptr;
 	
@@ -253,12 +255,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		return -1;
 	}
 
+	// ちゃんとデータファイルの内容の順序で読み込まないとNG
+	// シグネチャ(3byte)
 	fread(signature, sizeof(signature), 1, fp);
+	// ヘッダ情報の読み込み
 	fread(&pmdHeader, sizeof(pmdHeader), 1, fp);
+	// 頂点情報の読み込み
 	fread(&vertNum, sizeof(vertNum), 1, fp);
-
 	std::vector<unsigned char> vertices(vertNum * pmdvertex_size);	// バッファの確保（頂点数 * 頂点サイズ）
 	fread(vertices.data(), vertices.size(), 1, fp);				// 頂点データの読み込み
+
+	// インデックス情報の読み込み
+	fread(&indicesNum, sizeof(indicesNum), 1, fp);
+	indices.resize(indicesNum);
+	fread(indices.data(), indices.size() * sizeof(indices[0]), 1, fp);
 
 	fclose(fp);
 
@@ -476,15 +486,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertBuff->Unmap(0, nullptr);
 #pragma endregion
 
-#pragma region インデックスバッファーの作成
+#pragma region インデックスバッファーの作成>モデル読み込みに修正
 	ID3D12Resource* idxBuff = nullptr;
 
 	// 頂点バッファーの設定を使いまわす（サイズ以外）
-	resDesc.Width = sizeof(indeces);
+	// →モデル読み込みに変更したのでモデルの情報を使う
+	// resDesc.Width = sizeof(indeces);
+	auto idxHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto idxResDescBuf = CD3DX12_RESOURCE_DESC::Buffer(indices.size() * sizeof(indices[0]));
 	result = _dev->CreateCommittedResource(
-		&heapProp,
+		// &heapProp,
+		&idxHeapProp,
 		D3D12_HEAP_FLAG_NONE,
-		&resDesc,
+		// &resDesc,
+		&idxResDescBuf,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(&idxBuff)
@@ -492,9 +507,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	unsigned short* mappedIdx = nullptr;
 	idxBuff->Map(0, nullptr, (void**)&mappedIdx);
-	copy(begin(indeces), end(indeces), mappedIdx);
+	copy(begin(indices), end(indices), mappedIdx);
 	idxBuff->Unmap(0, nullptr);
 #pragma endregion
+
+
+#pragma region インデックス情報の読み込み
+#pragma endregion
+
 
 #pragma region 頂点バッファビューの作成
 	// 何バイトのデータが存在するのか？１頂点あたり何バイトなのか？などを知らせるデータ
@@ -574,10 +594,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 #pragma region インデックスバッファビューの作成
 	D3D12_INDEX_BUFFER_VIEW ibView = {};
-
 	ibView.BufferLocation = idxBuff->GetGPUVirtualAddress();
 	ibView.Format = DXGI_FORMAT_R16_UINT;
-	ibView.SizeInBytes = sizeof(indeces);
+	//	ibView.SizeInBytes = sizeof(indeces);
+	ibView.SizeInBytes = indices.size() * sizeof(indices[0]);
 #pragma endregion
 
 #pragma region テクスチャバッファの作成
@@ -676,7 +696,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			XM_PIDIV2,		// 画角(FOV)
 			static_cast<float>(window_width) / static_cast<float>(window_height),	// アスペクト比
 			1.0f,				// 見える範囲の手前(near面)
-			10.0f				// 見える範囲の奥(far面)
+			100.0f				// 見える範囲の奥(far面)
 		);
 	}
 
@@ -1029,7 +1049,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		);
 
 		// レンダーターゲットを特定の色でクリア
-		float clearColor[] = { 0.0f, 0.0f ,0.5f ,1.0f };		// 黄色
+		float clearColor[] = { 1.0f, 1.0f ,1.0f ,1.0f };		// 黄色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
 
 		// パイプラインステートの指定
@@ -1061,13 +1081,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->RSSetScissorRects(1, &scissorRect);
 		// プリミティブトポロジの設定
 		_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
 		// 頂点バッファの指定
 		_cmdList->IASetVertexBuffers(0, 1, &vbView);
 		// インデクスバッファの指定
 		_cmdList->IASetIndexBuffer(&ibView);
 		// 描画
-		// _cmdList->DrawInstanced(6, 1, 0, 0);				// インデックス情報を使わない描画
-		_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);		// インデクス情報を使う描画
+		// _cmdList->DrawInstanced(vertNum, 1, 0, 0);				// インデックス情報を使わない描画
+		// _cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);		// インデクス情報を使う描画
+		_cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);		// モデルのインデックス情報を使う
 
 		// バックバッファの書き込み完了を待つ
 		// CD3DX12ヘルパーを使う場合これは不要
@@ -1084,6 +1106,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		_cmdQueue->Signal(_fence, ++_fenceVal);
 
+		// 非同期で待つ
 		while (_fence->GetCompletedValue() != _fenceVal) {
 			;
 		}

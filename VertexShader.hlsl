@@ -10,6 +10,7 @@ min16uint weight : WEIGHT
 {
     Output output;
     output.svpos = mul(mat, pos);
+    output.normal = normal;
     output.uv = uv;
     return output;
 }

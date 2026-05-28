@@ -1,7 +1,8 @@
 struct Output
 {
-    float4 svpos : SV_POSITION;
-    float2 uv : TEXCOORD;
+    float4 svpos : SV_POSITION;     // システム用頂点座標
+    float4 normal : NORMAL;         // 法線ベクトル
+    float2 uv : TEXCOORD;           // uv座標
 };
 
 Texture2D<float4> tex : register(t0); // テクスチャレジスタ0番
