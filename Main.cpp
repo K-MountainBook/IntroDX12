@@ -85,15 +85,37 @@ struct Vertex {
 	XMFLOAT2 uv;	// uv座標
 };
 
+// PMDヘッダ構造体
+struct PMDHeader
+{
+	float version;
+	char model_name[20];
+	char comment[256];
+};
+
+
+// PMD頂点用構造体
+struct PDMVertex 
+{
+	XMFLOAT3 pos;		// 頂点座標
+	XMFLOAT3 normal;	// 法線ベクトル
+	XMFLOAT2 uv;		// uv座標
+	unsigned short boneName[2];	// ボーン番号
+	unsigned char boneWeight;	// ボーンウェイト
+	unsigned char edgeFlg;		// 輪郭線フラグ
+};
+// 頂点データのサイズ
+constexpr size_t pmdvertex_size = 38;
+
 // xyz座標にuv座標も加えた構造体の配列を作る
 // 結果ワールド座標
-Vertex vertices[] =
-{
-	{{  -1.0f,  -1.0f, 0.0f},{0.0f,1.0f}},
-	{{  -1.0f,   1.0f, 0.0f},{0.0f,0.0f}},
-	{{   1.0f,  -1.0f, 0.0f},{1.0f,1.0f}},
-	{{   1.0f,   1.0f, 0.0f},{1.0f,0.0f}},
-};
+//Vertex vertices[] =
+//{
+//	{{  -1.0f,  -1.0f, 0.0f},{0.0f,1.0f}},
+//	{{  -1.0f,   1.0f, 0.0f},{0.0f,0.0f}},
+//	{{   1.0f,  -1.0f, 0.0f},{1.0f,1.0f}},
+//	{{   1.0f,   1.0f, 0.0f},{1.0f,0.0f}},
+//};
 
 // ビュー座標系
 XMFLOAT3 eye(0, 0, -5);
@@ -217,6 +239,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 	}
+
+#pragma region モデルデータの読み込み
+	
+	char signature[3] = {};
+	unsigned int vertNum;		// 頂点数
+	PMDHeader pmdHeader;
+	FILE* fp = nullptr;
+	
+	fopen_s(&fp, "Model/初音ミク.pmd", "rb");
+
+	if (fp == nullptr) {
+		return -1;
+	}
+
+	fread(signature, sizeof(signature), 1, fp);
+	fread(&pmdHeader, sizeof(pmdHeader), 1, fp);
+	fread(&vertNum, sizeof(vertNum), 1, fp);
+
+	std::vector<unsigned char> vertices(vertNum * pmdvertex_size);	// バッファの確保（頂点数 * 頂点サイズ）
+	fread(vertices.data(), vertices.size(), 1, fp);				// 頂点データの読み込み
+
+	fclose(fp);
+
+#pragma endregion
 
 #pragma region ランダムなテクスチャデータを作成（一時的な処理
 	for (auto& rgba : texturedata) {
@@ -373,7 +419,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12Resource* vertBuff = nullptr;
 
 	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto verHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices));
+	// PMDモデル用にサイズ変更
+	//auto verHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices));
+	auto verHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(vertices.size());
 
 
 	D3D12_RESOURCE_DESC resDesc = {};
@@ -413,7 +461,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma region 頂点バッファに対して頂点情報のコピー
 	//XMFLOAT3* vertMap = nullptr;
 	// 頂点データにuv座標を追加したため型の変更(chapter4)
-	Vertex* vertMap = nullptr;
+	// PMDデータを読み込むためにサイズ変更
+	unsigned char* vertMap = nullptr;
+	//Vertex* vertMap = nullptr;
 
 	result = vertBuff->Map(
 		0,
@@ -451,8 +501,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
 
 	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();	// バッファの仮想アドレス
-	vbView.SizeInBytes = sizeof(vertices);						// 総バイト数
-	vbView.StrideInBytes = sizeof(vertices[0]);					// 1頂点あたりのバイト数
+	//PMDモデル用にサイズを変更
+	//vbView.SizeInBytes = sizeof(vertices);						// 総バイト数
+	//vbView.StrideInBytes = sizeof(vertices[0]);					// 1頂点あたりのバイト数
+	vbView.SizeInBytes = vertices.size();						// 総バイト数
+	vbView.StrideInBytes = pmdvertex_size;					// 1頂点あたりのバイト数
 #pragma endregion
 
 #pragma region 頂点データのレイアウトを設定
@@ -466,11 +519,51 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
 			0
 		},
+		// 法線の追加
+		{
+			"NORMAL",
+			0,
+			DXGI_FORMAT_R32G32B32_FLOAT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
 		//シェーダーの情報追加
 		{
 			"TEXCOORD",
 			0,
 			DXGI_FORMAT_R32G32_FLOAT,		// UV座標は二つしか必要ない
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		// ボーン番号の追加
+		{
+			"BONE_NO",
+			0,
+			DXGI_FORMAT_R16G16_UINT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		// ボーンウェイトの追加
+		{
+			"WEIGHT",
+			0,
+			DXGI_FORMAT_R8_UINT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0,
+		},
+		// 境界線の追加
+		{
+			"EDGE_FLG",
+			0,
+			DXGI_FORMAT_R8_UINT,
 			0,
 			D3D12_APPEND_ALIGNED_ELEMENT,
 			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
@@ -850,6 +943,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma endregion
 	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
 
+	// 見える範囲
 	D3D12_VIEWPORT viewPort = {};
 
 	viewPort.Width = window_width;
@@ -859,6 +953,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	viewPort.MaxDepth = 1.0f;
 	viewPort.MinDepth = 0.0f;
 
+	// 切り取る範囲
 	D3D12_RECT scissorRect = {};
 
 	scissorRect.top = 0;
@@ -972,7 +1067,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->IASetIndexBuffer(&ibView);
 		// 描画
 		// _cmdList->DrawInstanced(6, 1, 0, 0);				// インデックス情報を使わない描画
-		_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);			// インデクス情報を使う描画
+		_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);		// インデクス情報を使う描画
 
 		// バックバッファの書き込み完了を待つ
 		// CD3DX12ヘルパーを使う場合これは不要

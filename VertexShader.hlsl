@@ -2,7 +2,11 @@
 
 Output BasicVS(
 float4 pos : POSITION,
-float2 uv : TEXCOORD)
+float4 normal :NORMAL,
+float2 uv : TEXCOORD,
+min16uint2 boneno : BONE_NO,
+min16uint weight : WEIGHT
+)
 {
     Output output;
     output.svpos = mul(mat, pos);
