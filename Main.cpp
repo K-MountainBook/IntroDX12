@@ -130,6 +130,12 @@ struct TexRGBA
 
 std::vector<TexRGBA> texturedata(256 * 256);
 
+// シェーダーにわたすための行列データ
+struct MatricesData {
+	XMMATRIX world;		// モデルの座標
+	XMMATRIX viewproj;	// ビューとプロジェクション合成行列
+};
+
 // コンソールにデバッグ情報を表示
 void DebugOutputFormatString(const char* format, ...) {
 #ifdef _DEBUG
@@ -703,7 +709,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12Resource* constBuff = nullptr;
 
 	auto constHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto constResDescBuff = CD3DX12_RESOURCE_DESC::Buffer((sizeof(matrix) + 0xff) & ~0xff);
+	// 座標を入れるサイズが増えたのでバッファのサイズも合わせる
+	auto constResDescBuff = CD3DX12_RESOURCE_DESC::Buffer((sizeof(MatricesData) + 0xff) & ~0xff);
 
 	_dev->CreateCommittedResource(
 		&constHeapProp,
@@ -714,11 +721,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&constBuff)
 	);
 
-	XMMATRIX* mapMatrix;
+	// 陰影が正しくつくように書き換え
+	//XMMATRIX* mapMatrix;
+	MatricesData* mapMatrix;
 
-	// 定数バッファへのデータのコピー
+	//// 定数バッファへのデータのコピー
 	result = constBuff->Map(0, nullptr, (void**)&mapMatrix);
-	*mapMatrix = matrix;
+	// *mapMatrix = matrix;
+	mapMatrix->world = worldMatrix;
+	mapMatrix->viewproj = viewMatrix * projMatrix;
 
 #pragma endregion
 
@@ -769,6 +780,58 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 #pragma endregion
 
+#pragma region 深度バッファの作成
+	D3D12_RESOURCE_DESC depthResDesc = {};
+	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;	// 2次元テクスチャデータ
+	depthResDesc.Width = window_width;							
+	depthResDesc.Height = window_height;
+	depthResDesc.DepthOrArraySize = 1;								// テクスチャ配列でも3Dテクスチャでもない
+	depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;					// 深度値書き込み用
+	depthResDesc.SampleDesc.Count = 1;
+	depthResDesc.SampleDesc.Quality = 0;
+	depthResDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;	// 深度ステンシルとして仕様
+
+	D3D12_HEAP_PROPERTIES depthHeapProp = {};
+	depthHeapProp.Type = D3D12_HEAP_TYPE_DEFAULT;					// ここがデフォルトならあとはUNKNOWNでよい
+	depthHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	depthHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+	// クリアバリューが必要
+	D3D12_CLEAR_VALUE depthClearValue = {};
+	depthClearValue.DepthStencil.Depth = 1.0f;		// 深さ1.0f（最大値）でクリア
+	depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;	// 32bitのfloat値でクリア
+
+	ID3D12Resource* depthBuffer = nullptr;
+	result = _dev->CreateCommittedResource(
+		&depthHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&depthResDesc,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,		// 深度書き込みに利用
+		&depthClearValue,
+		IID_PPV_ARGS(&depthBuffer)
+	);
+
+	//ディスクリプタヒープを作成する
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	dsvHeapDesc.NumDescriptors = 1;				// 深度ビューは一つ
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;	// デプスステンシルビューとして利用する
+
+	ID3D12DescriptorHeap* dsvHeap = nullptr;
+	result = _dev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap));	//ヒープの生成
+
+	// 上記で作成したヒープ内にビューを作成する
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsView = {};
+	dsView.Format = DXGI_FORMAT_D32_FLOAT;
+	dsView.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	dsView.Flags = D3D12_DSV_FLAG_NONE;
+
+	_dev->CreateDepthStencilView(
+		depthBuffer,									// 元にするバッファ
+		&dsView,										// ビューの作成先
+		dsvHeap->GetCPUDescriptorHandleForHeapStart()	// ヒープの先頭アドレス
+	);
+
+#pragma endregion
 
 #pragma region シェーダーファイルの読み込み等
 	// エラー用
@@ -954,6 +1017,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	gpipeline.SampleDesc.Count = 1;
 	gpipeline.SampleDesc.Quality = 0;
 
+	// 深度バッファの設定
+	gpipeline.DepthStencilState.DepthEnable = true;		// 深度バッファを使用
+	gpipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;		// 書き込みを行う>ピクセル描画時に深度バッファに深度値を書き込む
+	gpipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;				// 小さい方を使用する
+
 	// グラフィックスパイプラインステートオブジェクトの生成
 	ID3D12PipelineState* _piplinestate = nullptr;
 	result = _dev->CreateGraphicsPipelineState(
@@ -1006,9 +1074,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		angle += 0.1f;
+		angle += 0.03f;
 		worldMatrix = XMMatrixRotationY(angle);
-		*mapMatrix = worldMatrix * viewMatrix * projMatrix;
+		// matMatrixの型が変わったのでワールド座標だけ代入
+		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
+		mapMatrix->world = worldMatrix;
 
 		// 次に表示するバッファのインデックスが取得出来ればOK
 		UINT bbIdx = _swapChain->GetCurrentBackBufferIndex();
@@ -1039,13 +1109,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		// 取得したインデックスのビューを利用するレンダーターゲットとしてセットする
 		auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+		auto dsvH = dsvHeap->GetCPUDescriptorHandleForHeapStart();
 		rtvH.ptr += static_cast<ULONG_PTR>(bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
 		// レンダーたーげとを設定する
 		_cmdList->OMSetRenderTargets(
 			1,				// レンダーターゲットの数
 			&rtvH,			// レンダーターゲットのハンドル
 			true,			// レンダーターゲットが複数の際に連続しているか
-			nullptr			// 深度ステンシルバッファビューのハンドル
+			&dsvH			// 深度ステンシルバッファビューのハンドル
 		);
 
 		// レンダーターゲットを特定の色でクリア
@@ -1096,6 +1167,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		//BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		//BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 		//_cmdList->ResourceBarrier(1, &BarrierDesc);
+
+		// 深度バッファのクリア
+		_cmdList->ClearDepthStencilView(
+			dsvH,							//デプスステンシルビューのハンドル
+			D3D12_CLEAR_FLAG_DEPTH,			// クリア先の指定
+			1.0f,							// デプスクリアの際に指定する値(near~farが正規化されているため、最大値）
+			0,								// ステンシルクリア時に指定する値
+			0,								// クリア範囲の配列サイズ
+			nullptr							// クリア範囲の配列
+		);
 
 		// コマンドリストは実行する前にクローズする必要がある
 		_cmdList->Close();

@@ -10,5 +10,6 @@ SamplerState smp : register(s0); // サンプラーレジスタ0番
 
 cbuffer cbuff0 : register(b0)
 {
-    matrix mat;
+    matrix world;
+    matrix viewproj;
 };

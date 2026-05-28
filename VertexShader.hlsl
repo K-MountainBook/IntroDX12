@@ -9,8 +9,9 @@ min16uint weight : WEIGHT
 )
 {
     Output output;
-    output.svpos = mul(mat, pos);
-    output.normal = normal;
+    output.svpos = mul(mul(viewproj, world), pos);
+    normal.w = 0; // 平行移動成分を無効にする
+    output.normal = mul(world, normal); //法線にもワールド座標変換を行う
     output.uv = uv;
     return output;
 }
