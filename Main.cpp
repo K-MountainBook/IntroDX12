@@ -113,8 +113,8 @@ struct PMDMaterial
 {
 	XMFLOAT3 diffuse;
 	float alpha;
-	float specularity;
 	XMFLOAT3 specular;
+	float specularity;
 	XMFLOAT3 ambient;
 	unsigned char toonIdx;
 	unsigned char edgeFlg;
@@ -941,6 +941,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	matCBVDesc.BufferLocation = materialBuff->GetGPUVirtualAddress();	// バッファのアドレス
 	matCBVDesc.SizeInBytes = materialBuffSize;							// 1マテリアル分のサイズ
 
+	D3D12_CPU_DESCRIPTOR_HANDLE matDescHeapH = materialDescHeap->GetCPUDescriptorHandleForHeapStart(); // ヒープの先頭アドレス
+
+	for (int i = 0; i < materialNum; ++i) {
+		// matCBVDescからビューの作成
+		_dev->CreateConstantBufferView(
+			&matCBVDesc,
+			matDescHeapH
+		);
+		//
+		matDescHeapH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // ヒープのアドレスも進める
+		matCBVDesc.BufferLocation += materialBuffSize;	// 次のマテリアル分だけアドレスを進める
+	}
 
 #pragma endregion
 
@@ -1008,7 +1020,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma endregion
 
 #pragma region ディスクリプタテーブルレンジの作成
-	D3D12_DESCRIPTOR_RANGE descTblRange[2] = {};
+	D3D12_DESCRIPTOR_RANGE descTblRange[3] = {};
 
 	// テクスチャ用レジスタ１(t0)
 	descTblRange[0].NumDescriptors = 1;		// テクスチャの数（今回は1）
@@ -1022,10 +1034,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descTblRange[1].BaseShaderRegister = 0;
 	descTblRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
+	// 定数用レジスタ２(b1)
+	descTblRange[2].NumDescriptors = 1;
+	descTblRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	descTblRange[2].BaseShaderRegister = 1;
+	descTblRange[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 #pragma endregion
 
 #pragma region ルートパラメータの作成
-	D3D12_ROOT_PARAMETER rootParam[2] = {};
+	D3D12_ROOT_PARAMETER rootParam[3] = {};
 
 	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];
@@ -1035,7 +1052,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParam[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParam[1].DescriptorTable.pDescriptorRanges = &descTblRange[1];
 	rootParam[1].DescriptorTable.NumDescriptorRanges = 1;
-	rootParam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;				// ピクセルシェーダから見ることができる
+	rootParam[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;				// 頂点シェーダから見ることができる
+
+	rootParam[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParam[2].DescriptorTable.pDescriptorRanges = &descTblRange[2];
+	rootParam[2].DescriptorTable.NumDescriptorRanges = 1;
+	rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;				// ピクセルシェーダから見ることができる
+
 
 #pragma endregion
 
@@ -1062,7 +1085,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	rootSignatureDesc.pParameters = rootParam;
-	rootSignatureDesc.NumParameters = 2;
+	rootSignatureDesc.NumParameters = 3;
 
 	rootSignatureDesc.pStaticSamplers = &samplerDesc;
 	rootSignatureDesc.NumStaticSamplers = 1;
@@ -1234,6 +1257,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			return -1;
 		}
 
+		//以下は描画処理前に用意しておく必要がある
+		{
+			// ビューポート、シザー矩形の設定
+			_cmdList->RSSetViewports(1, &viewPort);
+			_cmdList->RSSetScissorRects(1, &scissorRect);
+			// プリミティブトポロジの設定
+			_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+			// 頂点バッファの指定
+			_cmdList->IASetVertexBuffers(0, 1, &vbView);
+			// インデクスバッファの指定
+			_cmdList->IASetIndexBuffer(&ibView);
+		}
+
 		// レンダーターゲットを特定の色でクリア
 		float clearColor[] = { 1.0f, 1.0f ,1.0f ,1.0f };		// 黄色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
@@ -1243,6 +1280,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// ルートシグネチャの指定
 		_cmdList->SetGraphicsRootSignature(rootsignature);
 		// ディスクリプタヒープのセット
+		// SRVとCBVの両方が入っているヒープをセットすれば、ルートパラメータで指定したレジスタに対応するアドレスを自動的に取得してくれる
 		_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 
 		// ルートパラメータとディスクリプタヒープの関連付け
@@ -1262,20 +1300,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			heapHandle
 		);
 
-		// ビューポート、シザー矩形の設定
-		_cmdList->RSSetViewports(1, &viewPort);
-		_cmdList->RSSetScissorRects(1, &scissorRect);
-		// プリミティブトポロジの設定
-		_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		// _cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-		// 頂点バッファの指定
-		_cmdList->IASetVertexBuffers(0, 1, &vbView);
-		// インデクスバッファの指定
-		_cmdList->IASetIndexBuffer(&ibView);
+		// マテリアルのディスクリプタヒープのアドレスを取得
+		// マテリアルヒープにはCBV一つしか入っていないため、SetDescriptorHeapをしなくても良い？
+		// アドレスをそのまま使える。
+		auto matHeapHandle = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
+		unsigned int idxOffset = 0;
+
+		for (auto& m : materials) {
+			// マテリアルのセット
+			// ルートパラメータとディスクリプタヒープの関連付けその参
+			// memo:先にマテリアルのハンドルを進めると色が変わる。
+			_cmdList->SetGraphicsRootDescriptorTable(
+				2,
+				matHeapHandle
+			);
+			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
+
+			matHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);	// マテリアル分だけアドレスを進める
+			idxOffset += m.indicesNum;
+		}
+
 		// 描画
 		// _cmdList->DrawInstanced(vertNum, 1, 0, 0);				// インデックス情報を使わない描画
 		// _cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);		// インデクス情報を使う描画
-		_cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);		// モデルのインデックス情報を使う
+		// _cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);		// モデルのインデックス情報を使う
 
 		// バックバッファの書き込み完了を待つ
 		// CD3DX12ヘルパーを使う場合これは不要(Li1099らへん)
