@@ -210,6 +210,115 @@ void EnableDebugLayer() {
 	}
 }
 
+// モデルのパスとテクスチャから合成パスを得る
+string GetTGexturePathFromModelPath(
+	const string& modelPath,
+	const char* texPath)
+{
+	auto folderPath = modelPath.substr(0, modelPath.rfind('/') + 1);
+	return folderPath + texPath;
+}
+
+// stringからwstringを得る
+wstring GetWideStringFromString(const string& str) {
+	auto num1 = MultiByteToWideChar(
+		CP_ACP,
+		MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		str.c_str(),
+		-1,
+		nullptr,
+		0
+	);
+
+	wstring wstr;
+	wstr.resize(num1);
+
+	auto num2 = MultiByteToWideChar(
+		CP_ACP,
+		MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		str.c_str(),
+		-1,
+		&wstr[0],
+		num1
+	);
+
+	assert(num1 == num2);
+	return wstr;
+}
+
+//ファイルからテクスチャを読み込む
+ID3D12Resource* LoadTextureFromFile(string& texPath)
+{
+	TexMetadata metadata = {};
+	ScratchImage scratchImg = {};
+
+	auto result = LoadFromWICFile(
+		GetWideStringFromString(texPath).c_str(),
+		WIC_FLAGS_NONE,
+		&metadata,
+		scratchImg
+	);
+
+	if (FAILED(result)) {
+		DebugOutputFormatString("テクスチャの読み込みに失敗しました。パス:%s\n", texPath.c_str());
+		return nullptr;
+	}
+
+	// 生データの読み込み
+	auto img = scratchImg.GetImage(0, 0, 0);
+
+	// WriteToSubresourceで転送するヒープの設定
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.CreationNodeMask = 0;
+	texHeapProp.VisibleNodeMask = 0;
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	resDesc.Format = metadata.format;
+	resDesc.Width = metadata.width;
+	resDesc.Height = metadata.height;
+	resDesc.DepthOrArraySize = metadata.arraySize;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.MipLevels = metadata.mipLevels;
+	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	// バッファの作成
+	ID3D12Resource* texBuff = nullptr;
+	result = _dev->CreateCommittedResource(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&texBuff)
+	);
+
+	if (FAILED(result)) {
+		DebugOutputFormatString("テクスチャバッファの作成に失敗しました。パス:%s\n", texPath.c_str());
+		return nullptr;
+	}
+
+	result = texBuff->WriteToSubresource(
+		0,
+		nullptr,
+		img->pixels,
+		img->rowPitch,
+		img->slicePitch
+	);
+
+	if (FAILED(result)) {
+		DebugOutputFormatString("テクスチャバッファへのデータ転送に失敗しました。パス:%s\n", texPath.c_str());
+		texBuff->Release();
+		return nullptr;
+	}
+
+	return texBuff;
+
+}
 
 #ifdef _DEBUG
 /// <summary>
@@ -298,7 +407,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	PMDHeader pmdHeader;
 	FILE* fp = nullptr;
 
-	fopen_s(&fp, "Model/初音ミク.pmd", "rb");
+	string strModelPath = "Model/初音ミク.pmd";
+
+	fopen_s(&fp, strModelPath.c_str(), "rb");
 
 	if (fp == nullptr) {
 		return -1;
@@ -354,17 +465,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma region テクスチャ用画像のロード
 	result = CoInitializeEx(0, COINIT_MULTITHREADED);
 
-	TexMetadata metadata = {};
-	ScratchImage scratchImg = {};
+	//TexMetadata metadata = {};
+	//ScratchImage scratchImg = {};
 
-	result = LoadFromWICFile(
-		L"img/textest.png",
-		WIC_FLAGS_NONE,
-		&metadata,
-		scratchImg
-	);
+	//result = LoadFromWICFile(
+	//	L"img/textest.png",
+	//	WIC_FLAGS_NONE,
+	//	&metadata,
+	//	scratchImg
+	//);
 
-	auto img = scratchImg.GetImage(0, 0, 0);
+	//auto img = scratchImg.GetImage(0, 0, 0);
+
+	vector<ID3D12Resource*> textureResources(pmdMaterials.size());
+
+	// textureResourcesにマテリアル番号に対応したテクスチャを読み込む
+	for (int i = 0; i < pmdMaterials.size(); ++i) {
+		if (strlen(pmdMaterials[i].texFilePath) == 0)
+		{
+			textureResources[i] = nullptr;
+			continue;
+		}
+		auto texFilePath = GetTGexturePathFromModelPath(
+			strModelPath,
+			pmdMaterials[i].texFilePath
+		);
+		textureResources[i] = LoadTextureFromFile(texFilePath);
+	}
+
+
 
 #pragma endregion
 
@@ -672,11 +801,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma region テクスチャバッファの作成
 	// WriteToSubresourceで転送するためのヒープの設定
 
-	heapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
-	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
-	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;	// 転送はL0、CPU側から直接行う
-	heapProp.CreationNodeMask = 0;		// 単一アダプタのため0
-	heapProp.VisibleNodeMask = 0;		// 単一アダプタのため0
+	//heapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	//heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	//heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;	// 転送はL0、CPU側から直接行う
+	//heapProp.CreationNodeMask = 0;		// 単一アダプタのため0
+	//heapProp.VisibleNodeMask = 0;		// 単一アダプタのため0
 
 	// ノイズ版
 	/*
@@ -691,28 +820,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	*/
 	// 画像テクスチャ版
-	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-	resDesc.Format = metadata.format;
-	resDesc.Width = metadata.width;
-	resDesc.Height = metadata.height;
-	resDesc.DepthOrArraySize = metadata.arraySize;
-	resDesc.SampleDesc.Count = 1;
-	resDesc.SampleDesc.Quality = 0;
-	resDesc.MipLevels = metadata.mipLevels;
-	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	//resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	//resDesc.Format = metadata.format;
+	//resDesc.Width = metadata.width;
+	//resDesc.Height = metadata.height;
+	//resDesc.DepthOrArraySize = metadata.arraySize;
+	//resDesc.SampleDesc.Count = 1;
+	//resDesc.SampleDesc.Quality = 0;
+	//resDesc.MipLevels = metadata.mipLevels;
+	//resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	//resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	//resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	ID3D12Resource* texBuff = nullptr;
+	//ID3D12Resource* texBuff = nullptr;
 
-	result = _dev->CreateCommittedResource(
-		&heapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&resDesc,
-		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,		// テクスチャ用を指定
-		nullptr,
-		IID_PPV_ARGS(&texBuff)
-	);
+	//result = _dev->CreateCommittedResource(
+	//	&heapProp,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&resDesc,
+	//	D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,		// テクスチャ用を指定
+	//	nullptr,
+	//	IID_PPV_ARGS(&texBuff)
+	//);
 
 	// ノイズ版
 	/*
@@ -725,13 +854,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	);
 	*/
 	// 画像テクスチャ版
-	result = texBuff->WriteToSubresource(
-		0,
-		nullptr,
-		img->pixels,		// 元データのアドレス
-		img->rowPitch,		// 1ラインのサイズ
-		img->slicePitch		// 1枚のサイズ
-	);
+	//result = texBuff->WriteToSubresource(
+	//	0,
+	//	nullptr,
+	//	img->pixels,		// 元データのアドレス
+	//	img->rowPitch,		// 1ラインのサイズ
+	//	img->slicePitch		// 1枚のサイズ
+	//);
 	/* ここまででテクスチャVRAMに転送完了 */
 #pragma endregion
 
@@ -814,32 +943,60 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 上記で作成したディスクリプタヒープ上にシェーダーリソースビューを作成する
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format = metadata.format;	// rgbaを正規化→画像読み込みの際は画像のメタデータに合わせる
+	srvDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;	// rgbaを正規化→画像読み込みの際は画像のメタデータに合わせる
+	// srvDesc.Format = metadata.format;	// rgbaを正規化→画像読み込みの際は画像のメタデータに合わせる
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;		// RGBAをどのようにマッピングするか指定する
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		// 2Dテクスチャ
 	srvDesc.Texture2D.MipLevels = 1;
 
 	// ディスクリプタヒープの先頭アドレスを取得→SRV>CBVの順序で入っているのでSRVの位置を取得できるはず。
 	auto basicHeapHandle = basicDescHeap->GetCPUDescriptorHandleForHeapStart();
+	auto incrementSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	_dev->CreateShaderResourceView(
-		texBuff,							// ビューと関連付けるバッファ
-		&srvDesc,							// テクスチャ設定情報
-		basicDescHeap->GetCPUDescriptorHandleForHeapStart()		// ヒープのどこに割り当てるか
-	);
+	// texBuffはID3D12Resource*型
 
-	// 取得したアドレスをバッファサイズ分進めてCBVの位置にする。大きさはCBV、SRV、UAVとも同一
-	basicHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	//_dev->CreateShaderResourceView(
+	//	texBuff,							// ビューと関連付けるバッファ
+	//	&srvDesc,							// テクスチャ設定情報
+	//	basicDescHeap->GetCPUDescriptorHandleForHeapStart()		// ヒープのどこに割り当てるか
+	//);
 
-	// 定数バッファビューの設定
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-	cbvDesc.BufferLocation = constBuff->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = constBuff->GetDesc().Width;
-	// 定数バッファビューの作成
-	_dev->CreateConstantBufferView(
-		&cbvDesc,				// ビューに紐づけるバッファ 
-		basicHeapHandle			// ヒープのアドレス
-	);
+	// TODO:本来SRVの分進めて、CBVを読み込み次のバッファに行くべき。
+	// 
+
+	for (int i = 0; i < materialNum; ++i) {
+
+		if (textureResources[i] != nullptr) {
+			srvDesc.Format = textureResources[i]->GetDesc().Format;
+		}
+
+		// シェーダリソースビューの作成
+		_dev->CreateShaderResourceView(
+			textureResources[i],
+			&srvDesc,
+			basicHeapHandle
+		);
+
+		//SRVのアドレス分進める
+		basicHeapHandle.ptr += incrementSize;
+
+
+		// 定数バッファビューの設定
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+		cbvDesc.BufferLocation = constBuff->GetGPUVirtualAddress();
+		cbvDesc.SizeInBytes = constBuff->GetDesc().Width;
+		// 定数バッファビューの作成
+		_dev->CreateConstantBufferView(
+			&cbvDesc,				// ビューに紐づけるバッファ 
+			basicHeapHandle			// ヒープのアドレス
+		);
+
+
+		// CBV分のアドレスを進める
+		basicHeapHandle.ptr += incrementSize;
+
+
+	}
 
 #pragma endregion
 
