@@ -8,7 +8,7 @@ float4 BasicPS(Output input) : SV_TARGET
     
     return float4(brightness, brightness, brightness, 1)
         // テクスチャが出るようになる
-        * tex.Sample(smp, input.uv)
+        // * tex.Sample(smp, input.uv)
         * diffuse
     ;
     //return float4(tex.Sample(smp, input.uv));

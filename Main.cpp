@@ -211,6 +211,167 @@ void EnableDebugLayer() {
 }
 
 
+ID3D12Resource* CreateWhiteTexture() {
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.VisibleNodeMask = 0;
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	resDesc.Width = 4;
+	resDesc.Height = 4;
+	resDesc.DepthOrArraySize = 1;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = 1;
+	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* whiteBuff = nullptr;
+
+	auto result = _dev->CreateCommittedResource
+	(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&whiteBuff)
+	);
+
+	if (FAILED(result)) {
+		return nullptr;
+	}
+
+	vector<unsigned char> data(4 * 4 * 4);
+	fill(data.begin(), data.end(), 255);	// RGBA全て255の白色データを作成	
+
+	result = whiteBuff->WriteToSubresource(
+		0,
+		nullptr,
+		data.data(),
+		4 * 4,
+		data.size()
+	);
+
+	return whiteBuff;
+}
+
+// パス合成
+string GetTexturePathFromModelAndTexPath(
+	const string& modelPath,
+	const char* texPath
+) {
+	string folderPath = modelPath.substr(0, modelPath.rfind('/') + 1);
+	return folderPath + texPath;
+}
+
+// マルチバイト文字列からワイド文字列を得る
+wstring GetWideStringFromString(
+	const string& str
+) {
+	// 呼び出し1回目
+	auto num1 = MultiByteToWideChar(
+		CP_ACP,
+		MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		str.c_str(),
+		-1,
+		nullptr,
+		0
+	);
+
+	wstring wstr;
+	wstr.resize(num1);
+
+	auto num2 = MultiByteToWideChar(
+		CP_ACP,
+		MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		str.c_str(),
+		-1,
+		&wstr[0],
+		num1
+	);
+
+	assert(num1 == num2);
+	return wstr;
+}
+
+ID3D12Resource* loadTextureFromFile(
+	string& texPath
+) {
+	// WICテクスチャのロード
+	TexMetadata metadata = {};
+	ScratchImage scratchImg = {};
+
+	auto result = LoadFromWICFile(
+		GetWideStringFromString(texPath).c_str(),
+		WIC_FLAGS_NONE,
+		&metadata,
+		scratchImg
+	);
+
+	if (FAILED(result)) {
+		return nullptr;
+	}
+
+	auto img = scratchImg.GetImage(0, 0, 0);
+
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+	// WriteToSubresourceで転送するためのヒープの設定
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;	// 転送はL0、CPU側から直接行う
+	texHeapProp.CreationNodeMask = 0;		// 単一アダプタのため0
+	texHeapProp.VisibleNodeMask = 0;		// 単一アダプタのため0
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	// 画像テクスチャ版
+	resDesc.Format = metadata.format;
+	resDesc.Width = metadata.width;
+	resDesc.Height = metadata.height;
+	resDesc.DepthOrArraySize = metadata.arraySize;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = metadata.mipLevels;
+	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* texBuff = nullptr;
+
+	result = _dev->CreateCommittedResource(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&texBuff)
+	);
+
+	if (FAILED(result))
+	{
+		return nullptr;
+	}
+
+	result = texBuff->WriteToSubresource(
+		0,
+		nullptr,
+		img->pixels,
+		static_cast<UINT>(img->rowPitch),
+		static_cast<UINT>(img->slicePitch)
+	);
+
+	if (FAILED(result)) {
+		return nullptr;
+	}
+
+	return texBuff;
+
+}
 #ifdef _DEBUG
 /// <summary>
 /// デバッグの場合はmain関数
@@ -503,18 +664,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	auto verHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(vertices.size());
 
 
-	D3D12_RESOURCE_DESC resDesc = {};
-	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;	// バッファに利用するのでバッファを指定
-	resDesc.Alignment = 0;									// 0で良い（らしい）
-	resDesc.Width = sizeof(vertices);						// 幅で全てまかなうので頂点情報が入るサイズにする
-	resDesc.Height = 1;										// 上記理由により1
-	resDesc.DepthOrArraySize = 1;							// ここでは１でよい
-	resDesc.MipLevels = 1;									// ここでは１でよい
-	resDesc.Format = DXGI_FORMAT_UNKNOWN;					// 画像を利用しないのでUNKNOWNでよい
-	resDesc.SampleDesc.Count = 1;							// 1とする
-	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;				// NONEでよい
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;		// メモリが最初から終わりまで連続していることを示す値を指定
-
 	// ID3D12Resource* vertBuff = nullptr;
 
 	//result = _dev->CreateCommittedResource(
@@ -671,14 +820,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma endregion
 
 #pragma region テクスチャバッファの作成
-	// WriteToSubresourceで転送するためのヒープの設定
 
+	// WriteToSubresourceで転送するためのヒープの設定
 	heapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
 	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
 	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;	// 転送はL0、CPU側から直接行う
 	heapProp.CreationNodeMask = 0;		// 単一アダプタのため0
 	heapProp.VisibleNodeMask = 0;		// 単一アダプタのため0
 
+	D3D12_RESOURCE_DESC resDesc = {};
 	// ノイズ版
 	/*
 	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -1285,6 +1435,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 
 		// ルートパラメータとディスクリプタヒープの関連付け
+		// マテリアルが複数ある場合は、ルートパラメータとディスクリプタヒープの関連付けを描画するマテリアルごとに行う必要がある	
 		_cmdList->SetGraphicsRootDescriptorTable(
 			0,			// ルートパラメータインデックス
 			basicDescHeap->GetGPUDescriptorHandleForHeapStart()	// ヒープアドレス
