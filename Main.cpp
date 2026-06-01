@@ -358,7 +358,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ScratchImage scratchImg = {};
 
 	result = LoadFromWICFile(
-		L"img/textest.png",
+		L"Model/eye2.bmp",
+		//L"img/textest.png",
 		WIC_FLAGS_NONE,
 		&metadata,
 		scratchImg
