@@ -530,6 +530,70 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 #pragma endregion
 
+#pragma region 頂点データのレイアウトを設定
+	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+		{
+			"POSITION",
+			0,
+			DXGI_FORMAT_R32G32B32_FLOAT,	// xyz座標は3つ必要
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		// 法線の追加
+		{
+			"NORMAL",
+			0,
+			DXGI_FORMAT_R32G32B32_FLOAT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		//シェーダーの情報追加
+		{
+			"TEXCOORD",
+			0,
+			DXGI_FORMAT_R32G32_FLOAT,		// UV座標は二つしか必要ない
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		// ボーン番号の追加
+		{
+			"BONE_NO",
+			0,
+			DXGI_FORMAT_R16G16_UINT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+		// ボーンウェイトの追加
+		{
+			"WEIGHT",
+			0,
+			DXGI_FORMAT_R8_UINT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0,
+		},
+		// 境界線の追加
+		{
+			"EDGE_FLG",
+			0,
+			DXGI_FORMAT_R8_UINT,
+			0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+			0
+		},
+	};
+#pragma endregion
+
 	// コマンドリストの作成とコマンドアロケータ
 	// コマンドリストはGPUに対する命令のインターフェイス
 	// コマンドアロケータが本体。命令オブジェクトはアロケータにPushBackされていく。
@@ -590,8 +654,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		(IDXGISwapChain1**)&_swapChain
 	);
 
-
-
 	// レンダーターゲットビュー(RTV)
 	// バックバッファに対してデータの書き込みを行う
 	// バッファに格納されたデータの使い方を定義するのがビュー
@@ -607,7 +669,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	ID3D12DescriptorHeap* rtvHeaps = nullptr;
 
-	result = _dev->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&rtvHeaps));
+	result = _dev->CreateDescriptorHeap(
+		&heapDesc, 
+		IID_PPV_ARGS(&rtvHeaps)
+	);
 
 	//Swapchain内のバッファとビューを紐づける処理
 	DXGI_SWAP_CHAIN_DESC swcDesc = {};
@@ -634,7 +699,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// レンダービューの作成
 		_dev->CreateRenderTargetView(
 			_backBuffers[idx],
-			//nullptr,
 			&rtvDesc,
 			handle
 		);
@@ -729,11 +793,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	idxBuff->Unmap(0, nullptr);
 #pragma endregion
 
-
-#pragma region インデックス情報の読み込み
-#pragma endregion
-
-
 #pragma region 頂点バッファビューの作成
 	// 何バイトのデータが存在するのか？１頂点あたり何バイトなのか？などを知らせるデータ
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
@@ -746,70 +805,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vbView.StrideInBytes = pmdvertex_size;					// 1頂点あたりのバイト数
 #pragma endregion
 
-
-#pragma region 頂点データのレイアウトを設定
-	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{
-			"POSITION",
-			0,
-			DXGI_FORMAT_R32G32B32_FLOAT,	// xyz座標は3つ必要
-			0,
-			D3D12_APPEND_ALIGNED_ELEMENT,
-			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-			0
-		},
-		// 法線の追加
-		{
-			"NORMAL",
-			0,
-			DXGI_FORMAT_R32G32B32_FLOAT,
-			0,
-			D3D12_APPEND_ALIGNED_ELEMENT,
-			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-			0
-		},
-		//シェーダーの情報追加
-		{
-			"TEXCOORD",
-			0,
-			DXGI_FORMAT_R32G32_FLOAT,		// UV座標は二つしか必要ない
-			0,
-			D3D12_APPEND_ALIGNED_ELEMENT,
-			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-			0
-		},
-		// ボーン番号の追加
-		{
-			"BONE_NO",
-			0,
-			DXGI_FORMAT_R16G16_UINT,
-			0,
-			D3D12_APPEND_ALIGNED_ELEMENT,
-			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-			0
-		},
-		// ボーンウェイトの追加
-		{
-			"WEIGHT",
-			0,
-			DXGI_FORMAT_R8_UINT,
-			0,
-			D3D12_APPEND_ALIGNED_ELEMENT,
-			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-			0,
-		},
-		// 境界線の追加
-		{
-			"EDGE_FLG",
-			0,
-			DXGI_FORMAT_R8_UINT,
-			0,
-			D3D12_APPEND_ALIGNED_ELEMENT,
-			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-			0
-		},
-	};
-#pragma endregion
 
 #pragma region インデックスバッファビューの作成
 	D3D12_INDEX_BUFFER_VIEW ibView = {};
@@ -947,7 +942,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 #pragma endregion
 
-#pragma region ディスクリプタヒープ関連処理
+#pragma region basicディスクリプタヒープ関連処理
 
 	ID3D12DescriptorHeap* basicDescHeap = nullptr;
 	D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
@@ -976,7 +971,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	_dev->CreateShaderResourceView(
 		texBuff,							// ビューと関連付けるバッファ
 		&srvDesc,							// テクスチャ設定情報
-		basicDescHeap->GetCPUDescriptorHandleForHeapStart()		// ヒープのどこに割り当てるか
+		basicHeapHandle						// ヒープのどこに割り当てるか
 	);
 
 	// 取得したアドレスをバッファサイズ分進めてCBVの位置にする。大きさはCBV、SRV、UAVとも同一
@@ -1025,7 +1020,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&depthBuffer)
 	);
 
-	//ディスクリプタヒープを作成する
+	// 深度ステンシル用のディスクリプタヒープを作成する
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 	dsvHeapDesc.NumDescriptors = 1;				// 深度ビューは一つ
 	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;	// デプスステンシルビューとして利用する
@@ -1053,7 +1048,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	ID3D12Resource* materialBuff = nullptr;
 
+	// ヒープの設定
 	auto matHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	// リソースバッファ
 	auto matResDescBuff = CD3DX12_RESOURCE_DESC::Buffer(materialBuffSize * materialNum);
 
 	result = _dev->CreateCommittedResource(
@@ -1074,8 +1071,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 	materialBuff->Unmap(0, nullptr);
 
-	// ディスクリプタヒープを作成する
+	// マテリアル用ディスクリプタヒープ
 	ID3D12DescriptorHeap* materialDescHeap = nullptr;
+	// マテリアル数分のディスクリプタを作成する
 	D3D12_DESCRIPTOR_HEAP_DESC materialDescHeapDesc = {};
 	materialDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	materialDescHeapDesc.NodeMask = 0;
@@ -1094,13 +1092,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	D3D12_CPU_DESCRIPTOR_HANDLE matDescHeapH = materialDescHeap->GetCPUDescriptorHandleForHeapStart(); // ヒープの先頭アドレス
 
+	// 全てのマテリアルをループしてビューに作成する
 	for (int i = 0; i < materialNum; ++i) {
 		// matCBVDescからビューの作成
 		_dev->CreateConstantBufferView(
 			&matCBVDesc,
 			matDescHeapH
 		);
-		//
+
 		matDescHeapH.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // ヒープのアドレスも進める
 		matCBVDesc.BufferLocation += materialBuffSize;	// 次のマテリアル分だけアドレスを進める
 	}
@@ -1435,6 +1434,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 
 		// ルートパラメータとディスクリプタヒープの関連付け
+		// 1:テクスチャ、2:定数（座標）、3:定数（マテリアル）
 		// マテリアルが複数ある場合は、ルートパラメータとディスクリプタヒープの関連付けを描画するマテリアルごとに行う必要がある	
 		_cmdList->SetGraphicsRootDescriptorTable(
 			0,			// ルートパラメータインデックス
