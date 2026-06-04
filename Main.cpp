@@ -670,7 +670,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12DescriptorHeap* rtvHeaps = nullptr;
 
 	result = _dev->CreateDescriptorHeap(
-		&heapDesc, 
+		&heapDesc,
 		IID_PPV_ARGS(&rtvHeaps)
 	);
 
@@ -958,24 +958,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&basicDescHeap)
 	);
 
+	// テクスチャをBasicからMaterialに移動する20260604
 	// 上記で作成したディスクリプタヒープ上にシェーダーリソースビューを作成する
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format = metadata.format;	// rgbaを正規化→画像読み込みの際は画像のメタデータに合わせる
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;		// RGBAをどのようにマッピングするか指定する
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		// 2Dテクスチャ
-	srvDesc.Texture2D.MipLevels = 1;
+	//D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	//srvDesc.Format = metadata.format;	// rgbaを正規化→画像読み込みの際は画像のメタデータに合わせる
+	//srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;		// RGBAをどのようにマッピングするか指定する
+	//srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;		// 2Dテクスチャ
+	//srvDesc.Texture2D.MipLevels = 1;
 
 	// ディスクリプタヒープの先頭アドレスを取得→SRV>CBVの順序で入っているのでSRVの位置を取得できるはず。
 	auto basicHeapHandle = basicDescHeap->GetCPUDescriptorHandleForHeapStart();
 
-	_dev->CreateShaderResourceView(
-		texBuff,							// ビューと関連付けるバッファ
-		&srvDesc,							// テクスチャ設定情報
-		basicHeapHandle						// ヒープのどこに割り当てるか
-	);
+	//_dev->CreateShaderResourceView(
+	//	texBuff,							// ビューと関連付けるバッファ
+	//	&srvDesc,							// テクスチャ設定情報
+	//	basicHeapHandle						// ヒープのどこに割り当てるか
+	//);
 
 	// 取得したアドレスをバッファサイズ分進めてCBVの位置にする。大きさはCBV、SRV、UAVとも同一
-	basicHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	//basicHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	// 定数バッファビューの設定
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
@@ -1444,7 +1445,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// 二つ目のディスクリプタヒープのアドレスを取得
 		auto heapHandle = basicDescHeap->GetGPUDescriptorHandleForHeapStart();
 		// そのままだと上と同じ（テクスチャのヒープ）なので、進めて定数のヒープを示すようにする
-		heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+// 		heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 		// ルートパラメータとディスクリプタヒープの関連付けその弐
 		_cmdList->SetGraphicsRootDescriptorTable(
