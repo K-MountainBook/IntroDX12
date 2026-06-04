@@ -162,8 +162,8 @@ struct Material
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 15, -5);
-XMFLOAT3 target(0, 15, 0);
+XMFLOAT3 eye(0, 12, -15);
+XMFLOAT3 target(0, 12, 0);
 XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
@@ -1439,7 +1439,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		// angle += 0.03f;
+		angle += 0.03f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
@@ -1517,23 +1517,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// 1:テクスチャ、2:定数（座標）、3:定数（マテリアル）
 		// マテリアルが複数ある場合は、ルートパラメータとディスクリプタヒープの関連付けを描画するマテリアルごとに行う必要がある	
 
-		// テクスチャ
-		_cmdList->SetDescriptorHeaps(1, &texDescHeap);
-		auto texHeapHandle = texDescHeap->GetGPUDescriptorHandleForHeapStart();
-		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		unsigned int idxOffset = 0;
-
-		for (auto& m : materials) {
-			_cmdList->SetGraphicsRootDescriptorTable(
-				0,			// ルートパラメータインデックス
-				texHeapHandle	// ヒープアドレス
-				//basicDescHeap->GetGPUDescriptorHandleForHeapStart()	// ヒープアドレス
-			);
-			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
-			texHeapHandle.ptr += texHeapHandleInc;	// ヒープのアドレスを次のテクスチャ分だけ進める	
-			idxOffset += m.indicesNum;
-		}
-
 		// 二つ目のディスクリプタヒープのアドレスを取得
 		// →頂点情報の入っているディスクリプタヒープの取得
 		_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
@@ -1548,9 +1531,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// マテリアルヒープにはCBV一つしか入っていないため、SetDescriptorHeapをしなくても良い？
 		// アドレスをそのまま使える。
 		_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
+		_cmdList->SetDescriptorHeaps(1, &texDescHeap);
 		auto matHeapHandle = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
-		idxOffset = 0;
+		unsigned int idxOffset = 0;
 
+		auto texHeapHandle = texDescHeap->GetGPUDescriptorHandleForHeapStart();
+		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		// テクスチャとマテリアルは対応するものを一個一個順番に処理しないとダメっぽい
 		for (auto& m : materials) {
 			// マテリアルのセット
 			// ルートパラメータとディスクリプタヒープの関連付けその参
@@ -1559,9 +1547,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				2,
 				matHeapHandle
 			);
+			// _cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
+
+			_cmdList->SetGraphicsRootDescriptorTable(
+				0,			// ルートパラメータインデックス
+				texHeapHandle	// ヒープアドレス
+				//basicDescHeap->GetGPUDescriptorHandleForHeapStart()	// ヒープアドレス
+			);
 			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
 
 			matHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);	// マテリアル分だけアドレスを進める
+			texHeapHandle.ptr += texHeapHandleInc;	// ヒープのアドレスを次のテクスチャ分だけ進める	
+
 			idxOffset += m.indicesNum;
 		}
 
