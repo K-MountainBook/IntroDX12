@@ -162,8 +162,8 @@ struct Material
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 12, -15);
-XMFLOAT3 target(0, 12, 0);
+XMFLOAT3 eye(0, 15, -10);
+XMFLOAT3 target(0, 15, 0);
 XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
@@ -488,7 +488,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	FILE* fp = nullptr;
 
 
-	//string strModelPath = "Model/巡音ルカ.pmd";
+	// string strModelPath = "Model/巡音ルカ.pmd";
 	string strModelPath = "Model/初音ミクmetal.pmd";
 	// string strModelPath = "Model/初音ミク.pmd";
 	fopen_s(&fp, strModelPath.c_str(), "rb");
@@ -541,6 +541,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		materials[i].material.specular = pmdMaterials[i].specular;
 		materials[i].material.specularity = pmdMaterials[i].specularity;
 		materials[i].material.ambient = pmdMaterials[i].ambient;
+		materials[i].additional.texPath = pmdMaterials[i].texFilePath;
 		materials[i].additional.toonIdx = pmdMaterials[i].toonIdx;
 	}
 #pragma	endregion
@@ -1145,6 +1146,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	vector<ID3D12Resource*> textureResources(materialNum);
 	vector<ID3D12Resource*> sphResources(materialNum);
+	vector<ID3D12Resource*> spaResources(materialNum);
 
 	for (int i = 0; i < materialNum; ++i) {
 
@@ -1157,37 +1159,54 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			string texFileName = pmdMaterials[i].texFilePath;
 
-			string sphStr = "";
-			string texStr = "";
+			string sphFileName = "";
+			string spaFileName = "";
+
 			if (count(texFileName.begin(), texFileName.end(), '*') > 0) {
 				auto namepair = SplitFileName(texFileName);
-
-
-				if (GetExtension(namepair.first) == "sph")
-				{
-					sphStr = namepair.first;
-					texStr = namepair.second;
+				if (GetExtension(namepair.first) == "sph") {
+					texFileName = namepair.second;
+					sphFileName = namepair.first;
 				}
-				// TODO あとでSPAも入れる
+				else if (GetExtension(namepair.first) == "spa") {
+					texFileName = namepair.second;
+					spaFileName = namepair.first;
+				}
 				else {
-					texStr = namepair.first;
-					if (GetExtension(namepair.second) == "sph")
-					{
-						sphStr = namepair.second;
+					texFileName = namepair.first;
+					if (GetExtension(namepair.second) == "sph") {
+						sphFileName = namepair.second;
+					}
+					else if (GetExtension(namepair.second) == "spa") {
+						spaFileName = namepair.second;
 					}
 				}
 			}
 			else {
-				texStr = pmdMaterials[i].texFilePath;
+				if (GetExtension(pmdMaterials[i].texFilePath) == "sph") {
+					sphFileName = pmdMaterials[i].texFilePath;
+					texFileName = "";
+				}
+				else if (GetExtension(pmdMaterials[i].texFilePath) == "spa") {
+					spaFileName = pmdMaterials[i].texFilePath;
+					texFileName = "";
+				}
+				else {
+					texFileName = pmdMaterials[i].texFilePath;
+				}
 			}
-
-			if (texStr != "") {
-				auto texFilepath = GetTexturePathFromModelAndTexPath(strModelPath, texStr.c_str());
-				textureResources[i] = LoadTextureFromFile(texFilepath);
+			//モデルとテクスチャパスからアプリケーションからのテクスチャパスを得る
+			if (texFileName != "") {
+				auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
+				textureResources[i] = LoadTextureFromFile(texFilePath);
 			}
-			if (sphStr != "") {
-				auto sphFilePath = GetTexturePathFromModelAndTexPath(strModelPath, sphStr.c_str());
+			if (sphFileName != "") {
+				auto sphFilePath = GetTexturePathFromModelAndTexPath(strModelPath, sphFileName.c_str());
 				sphResources[i] = LoadTextureFromFile(sphFilePath);
+			}
+			if (spaFileName != "") {
+				auto spaFilePath = GetTexturePathFromModelAndTexPath(strModelPath, spaFileName.c_str());
+				spaResources[i] = LoadTextureFromFile(spaFilePath);
 			}
 
 			// auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
@@ -1207,7 +1226,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_DESCRIPTOR_HEAP_DESC texDescHeapDesc = {};
 	texDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	texDescHeapDesc.NodeMask = 0;
-	texDescHeapDesc.NumDescriptors = materialNum;
+	texDescHeapDesc.NumDescriptors = materialNum * 2;
 	texDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
 	result = _dev->CreateDescriptorHeap(
@@ -1245,6 +1264,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			);
 
 		}
+
+		texHeapHandle.ptr += incSize;
+
+		if (sphResources[i] == nullptr) {
+			srvDesc.Format = whiteTex->GetDesc().Format;
+			_dev->CreateShaderResourceView(
+				whiteTex,
+				&srvDesc,
+				texHeapHandle
+			);
+		}
+		else {
+			srvDesc.Format = sphResources[i]->GetDesc().Format;
+			_dev->CreateShaderResourceView(
+				sphResources[i],
+				&srvDesc,
+				texHeapHandle
+			);
+
+		}
 		texHeapHandle.ptr += incSize;
 	}
 
@@ -1254,41 +1293,42 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 #pragma region 乗算スフィア用のディスクリプタヒープの作成
 
-	// テクスチャ用のディスクリプタヒープを作成する
-	ID3D12DescriptorHeap* sphDescHeap = nullptr;
-	D3D12_DESCRIPTOR_HEAP_DESC sphDescHeapDesc = {};
-	sphDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	sphDescHeapDesc.NodeMask = 0;
-	sphDescHeapDesc.NumDescriptors = materialNum;
-	sphDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	//// テクスチャ用のディスクリプタヒープを作成する
+	//ID3D12DescriptorHeap* sphDescHeap = nullptr;
+	//D3D12_DESCRIPTOR_HEAP_DESC sphDescHeapDesc = {};
+	//sphDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	//sphDescHeapDesc.NodeMask = 0;
+	//sphDescHeapDesc.NumDescriptors = materialNum;
+	//sphDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
-	result = _dev->CreateDescriptorHeap(
-		&sphDescHeapDesc,
-		IID_PPV_ARGS(&sphDescHeap)
-	);
+	//result = _dev->CreateDescriptorHeap(
+	//	&sphDescHeapDesc,
+	//	IID_PPV_ARGS(&sphDescHeap)
+	//);
 
-	auto sphDescHeapH = sphDescHeap->GetCPUDescriptorHandleForHeapStart();
+	//auto sphDescHeapH = sphDescHeap->GetCPUDescriptorHandleForHeapStart();
+	//incSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	for (int i = 0; i < materialNum; ++i) {
-		if (sphResources[i] == nullptr) {
-			srvDesc.Format = whiteTex->GetDesc().Format;
-			_dev->CreateShaderResourceView(
-				whiteTex,
-				&srvDesc,
-				sphDescHeapH
-			);
-		}
-		else {
-			srvDesc.Format = sphResources[i]->GetDesc().Format;
-			_dev->CreateShaderResourceView(
-				sphResources[i],
-				&srvDesc,
-				sphDescHeapH
-			);
+	//for (int i = 0; i < materialNum; ++i) {
+	//	if (sphResources[i] == nullptr) {
+	//		srvDesc.Format = whiteTex->GetDesc().Format;
+	//		_dev->CreateShaderResourceView(
+	//			whiteTex,
+	//			&srvDesc,
+	//			sphDescHeapH
+	//		);
+	//	}
+	//	else {
+	//		srvDesc.Format = sphResources[i]->GetDesc().Format;
+	//		_dev->CreateShaderResourceView(
+	//			sphResources[i],
+	//			&srvDesc,
+	//			sphDescHeapH
+	//		);
 
-		}
-		sphDescHeapH.ptr += incSize;
-	}
+	//	}
+	//	sphDescHeapH.ptr += incSize;
+	//}
 
 #pragma endregion
 
@@ -1356,10 +1396,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #pragma endregion
 
 #pragma region ディスクリプタテーブルレンジの作成
-	D3D12_DESCRIPTOR_RANGE descTblRange[4] = {};
+	D3D12_DESCRIPTOR_RANGE descTblRange[3] = {};
 
 	// テクスチャ用レジスタ１(t0) テクスチャ
-	descTblRange[0].NumDescriptors = 1;		// テクスチャの数（今回は1）
+	descTblRange[0].NumDescriptors = 2;		// テクスチャの数（今回は1）
 	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;		// 種類はテクスチャ
 	descTblRange[0].BaseShaderRegister = 0;				// テクスチャレジスタ番号0(t0)
 	descTblRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;	// とりあえず「連続したディスクリプタレンジが前の直後に来る」を指定
@@ -1375,19 +1415,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descTblRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
 	descTblRange[2].BaseShaderRegister = 1;
 	descTblRange[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	// sph用レジスタ（t1）
-	descTblRange[3].NumDescriptors = 1;		// テクスチャの数（今回は1）
-	descTblRange[3].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;		// 種類はテクスチャ
-	descTblRange[3].BaseShaderRegister = 1;				// テクスチャレジスタ番号0(t0)
-	descTblRange[3].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;	// とりあえず「連続したディスクリプタレンジが前の直後に来る」を指定
 #pragma endregion
 
 #pragma region ルートパラメータの作成
-	D3D12_ROOT_PARAMETER rootParam[4] = {};
+	D3D12_ROOT_PARAMETER rootParam[3] = {};
 
 	rootParam[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParam[0].DescriptorTable.pDescriptorRanges = &descTblRange[0];
+	rootParam[0].DescriptorTable.pDescriptorRanges = descTblRange;
 	rootParam[0].DescriptorTable.NumDescriptorRanges = 1;
 	rootParam[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;				// ピクセルシェーダから見ることができる
 
@@ -1400,11 +1434,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParam[2].DescriptorTable.pDescriptorRanges = &descTblRange[2];
 	rootParam[2].DescriptorTable.NumDescriptorRanges = 1;
 	rootParam[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;				// ピクセルシェーダから見ることができる
-
-	rootParam[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParam[3].DescriptorTable.pDescriptorRanges = &descTblRange[3];
-	rootParam[3].DescriptorTable.NumDescriptorRanges = 1;
-	rootParam[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;				// ピクセルシェーダから見ることができる
 
 
 #pragma endregion
@@ -1432,7 +1461,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	rootSignatureDesc.pParameters = rootParam;
-	rootSignatureDesc.NumParameters = 4;
+	rootSignatureDesc.NumParameters = 3;
 
 	rootSignatureDesc.pStaticSamplers = &samplerDesc;
 	rootSignatureDesc.NumStaticSamplers = 1;
@@ -1555,7 +1584,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		angle += 0.03f;
+		// angle += 0.03f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
@@ -1653,9 +1682,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		auto texHeapHandle = texDescHeap->GetGPUDescriptorHandleForHeapStart();
 		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-		auto sphHeapHandle = sphDescHeap->GetGPUDescriptorHandleForHeapStart();
-		auto sphHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
 		unsigned int idxOffset = 0;
 
 		// テクスチャとマテリアルは対応するものを一個一個順番に処理しないとダメっぽい
@@ -1667,24 +1693,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				2,
 				matHeapHandle
 			);
-			// _cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
+			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
 
+			// テクスチャ
 			_cmdList->SetGraphicsRootDescriptorTable(
 				0,			// ルートパラメータインデックス
 				texHeapHandle	// ヒープアドレス
-				//basicDescHeap->GetGPUDescriptorHandleForHeapStart()	// ヒープアドレス
-			);
-			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
-
-			_cmdList->SetGraphicsRootDescriptorTable(
-				3,
-				sphHeapHandle
 			);
 			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
 
 			matHeapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);	// マテリアル分だけアドレスを進める
 			texHeapHandle.ptr += texHeapHandleInc;	// ヒープのアドレスを次のテクスチャ分だけ進める	
-			sphHeapHandle.ptr += sphHeapHandleInc;
 
 			idxOffset += m.indicesNum;
 		}
