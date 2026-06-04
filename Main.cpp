@@ -162,8 +162,8 @@ struct Material
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 15, -10);
-XMFLOAT3 target(0, 15, 0);
+XMFLOAT3 eye(0, 12, -15);
+XMFLOAT3 target(0, 12, 0);
 XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
@@ -489,8 +489,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	//string strModelPath = "Model/巡音ルカ.pmd";
-	string strModelPath = "Model/初音ミクmetal.pmd";
-	//string strModelPath = "Model/初音ミク.pmd";
+	// string strModelPath = "Model/初音ミクmetal.pmd";
+	string strModelPath = "Model/初音ミク.pmd";
 	fopen_s(&fp, strModelPath.c_str(), "rb");
 
 	if (fp == nullptr) {
@@ -1152,55 +1152,55 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		if (strlen(pmdMaterials[i].texFilePath) == 0)
 		{
 			textureResources[i] = nullptr;
-			sphResources[i] = nullptr;
-		}
-
-		string texFileName = pmdMaterials[i].texFilePath;
-
-		string sphStr = "";
-		string texStr = "";
-		if (count(texFileName.begin(), texFileName.end(), '*') > 0) {
-			auto namepair = SplitFileName(texFileName);
-
-
-			if (GetExtension(namepair.first) == "sph")
-			{
-				sphStr = namepair.first;
-				texStr = namepair.second;
-			}
-			// TODO あとでSPAも入れる
-			else {
-				texStr = namepair.first;
-				if (GetExtension(namepair.second) == "sph")
-				{
-					sphStr = namepair.second;
-				}
-			}
 		}
 		else {
-			texStr = pmdMaterials[i].texFilePath;
+
+			string texFileName = pmdMaterials[i].texFilePath;
+
+			string sphStr = "";
+			string texStr = "";
+			if (count(texFileName.begin(), texFileName.end(), '*') > 0) {
+				auto namepair = SplitFileName(texFileName);
+
+
+				if (GetExtension(namepair.first) == "sph")
+				{
+					sphStr = namepair.first;
+					texStr = namepair.second;
+				}
+				// TODO あとでSPAも入れる
+				else {
+					texStr = namepair.first;
+					if (GetExtension(namepair.second) == "sph")
+					{
+						sphStr = namepair.second;
+					}
+				}
+			}
+			else {
+				texStr = pmdMaterials[i].texFilePath;
+			}
+
+			if (texStr != "") {
+				auto texFilepath = GetTexturePathFromModelAndTexPath(strModelPath, texStr.c_str());
+				textureResources[i] = LoadTextureFromFile(texFilepath);
+			}
+			if (sphStr != "") {
+				auto sphFilePath = GetTexturePathFromModelAndTexPath(strModelPath, sphStr.c_str());
+				sphResources[i] = LoadTextureFromFile(sphFilePath);
+			}
+
+			// auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
+
+			//	auto texFilePath = GetTexturePathFromModelAndTexPath
+			//	(
+			//		strModelPath,
+			//		pmdMaterials[i].texFilePath
+			//	);
+
+			// textureResources[i] = LoadTextureFromFile(texFilePath);
 		}
-
-		if (texStr != "") {
-			auto texFilepath = GetTexturePathFromModelAndTexPath(strModelPath, texStr.c_str());
-			textureResources[i] = LoadTextureFromFile(texFilepath);
-		}
-		if (sphStr != "") {
-			auto sphFilePath = GetTexturePathFromModelAndTexPath(strModelPath, sphStr.c_str());
-			sphResources[i] = LoadTextureFromFile(sphFilePath);
-		}
-
-		// auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
-
-		//	auto texFilePath = GetTexturePathFromModelAndTexPath
-		//	(
-		//		strModelPath,
-		//		pmdMaterials[i].texFilePath
-		//	);
-
-		// textureResources[i] = LoadTextureFromFile(texFilePath);
 	}
-
 
 	// テクスチャ用のディスクリプタヒープを作成する
 	ID3D12DescriptorHeap* texDescHeap = nullptr;
@@ -1555,7 +1555,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		// angle += 0.03f;
+		angle += 0.03f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
