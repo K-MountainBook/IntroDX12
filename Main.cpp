@@ -542,8 +542,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	FILE* fp = nullptr;
 
 
-	// string strModelPath = "Model/巡音ルカ.pmd";
-	string strModelPath = "Model/初音ミクmetal.pmd";
+	string strModelPath = "Model/巡音ルカ.pmd";
+	// string strModelPath = "Model/初音ミクmetal.pmd";
 	// string strModelPath = "Model/初音ミク.pmd";
 	fopen_s(&fp, strModelPath.c_str(), "rb");
 
