@@ -162,8 +162,8 @@ struct Material
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 15, -10);
-XMFLOAT3 target(0, 15, 0);
+XMFLOAT3 eye(0, 10, -15);
+XMFLOAT3 target(0, 10, 0);
 XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
@@ -1163,7 +1163,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			string spaFileName = "";
 
 			if (count(texFileName.begin(), texFileName.end(), '*') > 0) {
-				auto namepair = SplitFileName(texFileName);
+				auto namepair = SplitFileName(texFileName, '*');
 				if (GetExtension(namepair.first) == "sph") {
 					texFileName = namepair.second;
 					sphFileName = namepair.first;
@@ -1584,7 +1584,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		// angle += 0.03f;
+		angle += 0.01f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
@@ -1676,11 +1676,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// マテリアルヒープにはCBV一つしか入っていないため、SetDescriptorHeapをしなくても良い？
 		// アドレスをそのまま使える。
 		_cmdList->SetDescriptorHeaps(1, &materialDescHeap);
-		_cmdList->SetDescriptorHeaps(1, &texDescHeap);
 		auto matHeapHandle = materialDescHeap->GetGPUDescriptorHandleForHeapStart();
 
+
+		_cmdList->SetDescriptorHeaps(1, &texDescHeap);
 		auto texHeapHandle = texDescHeap->GetGPUDescriptorHandleForHeapStart();
-		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * 2;
 
 		unsigned int idxOffset = 0;
 
@@ -1689,12 +1690,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// マテリアルのセット
 			// ルートパラメータとディスクリプタヒープの関連付けその参
 			// memo:先にマテリアルのハンドルを進めると色が変わる。
+			// マテリアルとテクスチャのディスクリプタテーブルをまとめて読み込んで書き込みは一回？？？
 			_cmdList->SetGraphicsRootDescriptorTable(
 				2,
 				matHeapHandle
 			);
-			_cmdList->DrawIndexedInstanced(m.indicesNum, 1, idxOffset, 0, 0);		// モデルのインデックス情報を使う
-
 			// テクスチャ
 			_cmdList->SetGraphicsRootDescriptorTable(
 				0,			// ルートパラメータインデックス
