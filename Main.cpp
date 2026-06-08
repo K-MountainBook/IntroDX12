@@ -162,8 +162,8 @@ struct Material
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 10, -15);
-XMFLOAT3 target(0, 10, 0);
+XMFLOAT3 eye(0, 15, -10);
+XMFLOAT3 target(0, 15, 0);
 XMFLOAT3 up(0, 1, 0);
 
 // テクスチャデータの作成
@@ -251,6 +251,58 @@ ID3D12Resource* CreateWhiteTexture() {
 
 	vector<unsigned char> data(4 * 4 * 4);
 	fill(data.begin(), data.end(), 0xff);	// RGBA全て255の白色データを作成	
+
+	result = whiteBuff->WriteToSubresource(
+		0,
+		nullptr,
+		data.data(),
+		4 * 4,
+		data.size()
+	);
+
+	return whiteBuff;
+}
+
+
+ID3D12Resource* CreateBlackTexture() {
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	// texHeapProp.CreationNodeMask = 0;
+	texHeapProp.VisibleNodeMask = 0;
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	resDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	resDesc.Width = 4;
+	resDesc.Height = 4;
+	resDesc.DepthOrArraySize = 1;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.SampleDesc.Quality = 0;
+	resDesc.MipLevels = 1;
+	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* whiteBuff = nullptr;
+
+	auto result = _dev->CreateCommittedResource
+	(
+		&texHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(&whiteBuff)
+	);
+
+	if (FAILED(result)) {
+		return nullptr;
+	}
+
+	vector<unsigned char> data(4 * 4 * 4);
+	fill(data.begin(), data.end(), 0x00);	// RGBA全て0の黒色データを作成	
 
 	result = whiteBuff->WriteToSubresource(
 		0,
@@ -488,8 +540,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	FILE* fp = nullptr;
 
 
-	// string strModelPath = "Model/巡音ルカ.pmd";
-	string strModelPath = "Model/初音ミクmetal.pmd";
+	string strModelPath = "Model/巡音ルカ.pmd";
+	// string strModelPath = "Model/初音ミクmetal.pmd";
 	// string strModelPath = "Model/初音ミク.pmd";
 	fopen_s(&fp, strModelPath.c_str(), "rb");
 
@@ -1226,7 +1278,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_DESCRIPTOR_HEAP_DESC texDescHeapDesc = {};
 	texDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	texDescHeapDesc.NodeMask = 0;
-	texDescHeapDesc.NumDescriptors = materialNum * 2;
+	texDescHeapDesc.NumDescriptors = materialNum * 3;
 	texDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
 	result = _dev->CreateDescriptorHeap(
@@ -1242,6 +1294,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	ID3D12Resource* whiteTex = CreateWhiteTexture();
+	ID3D12Resource* blackTex = CreateBlackTexture();
 
 	auto texHeapHandle = texDescHeap->GetCPUDescriptorHandleForHeapStart();
 	auto incSize = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -1279,6 +1332,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			srvDesc.Format = sphResources[i]->GetDesc().Format;
 			_dev->CreateShaderResourceView(
 				sphResources[i],
+				&srvDesc,
+				texHeapHandle
+			);
+
+		}
+		texHeapHandle.ptr += incSize;
+
+		if (spaResources[i] == nullptr) {
+			srvDesc.Format = blackTex->GetDesc().Format;
+			_dev->CreateShaderResourceView(
+				blackTex,
+				&srvDesc,
+				texHeapHandle
+			);
+		}
+		else {
+			srvDesc.Format = spaResources[i]->GetDesc().Format;
+			_dev->CreateShaderResourceView(
+				spaResources[i],
 				&srvDesc,
 				texHeapHandle
 			);
@@ -1399,7 +1471,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_DESCRIPTOR_RANGE descTblRange[3] = {};
 
 	// テクスチャ用レジスタ１(t0) テクスチャ
-	descTblRange[0].NumDescriptors = 2;		// テクスチャの数（今回は1）
+	descTblRange[0].NumDescriptors = 3;		// テクスチャの数（今回は1）
 	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;		// 種類はテクスチャ
 	descTblRange[0].BaseShaderRegister = 0;				// テクスチャレジスタ番号0(t0)
 	descTblRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;	// とりあえず「連続したディスクリプタレンジが前の直後に来る」を指定
@@ -1584,7 +1656,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		angle += 0.01f;
+		// angle += 0.01f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
@@ -1681,7 +1753,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		_cmdList->SetDescriptorHeaps(1, &texDescHeap);
 		auto texHeapHandle = texDescHeap->GetGPUDescriptorHandleForHeapStart();
-		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * 2;
+		auto texHeapHandleInc = _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * 3;
 
 		unsigned int idxOffset = 0;
 
