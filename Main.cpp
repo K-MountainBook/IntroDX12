@@ -178,6 +178,8 @@ std::vector<TexRGBA> texturedata(256 * 256);
 struct MatricesData {
 	XMMATRIX world;		// モデルの座標
 	XMMATRIX viewproj;	// ビューとプロジェクション合成行列
+	XMMATRIX view;
+	XMMATRIX proj;
 };
 
 // コンソールにデバッグ情報を表示
@@ -1025,6 +1027,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// *mapMatrix = matrix;
 	mapMatrix->world = worldMatrix;
 	mapMatrix->viewproj = viewMatrix * projMatrix;
+	mapMatrix->view = viewMatrix;
+	mapMatrix->proj = projMatrix;
+
 
 #pragma endregion
 
@@ -1656,7 +1661,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		// angle += 0.01f;
+		angle += 0.01f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;

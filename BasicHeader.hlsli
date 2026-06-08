@@ -1,8 +1,9 @@
 struct Output
 {
-    float4 svpos : SV_POSITION;     // システム用頂点座標
-    float4 normal : NORMAL;         // 法線ベクトル
-    float2 uv : TEXCOORD;           // uv座標
+    float4 svpos : SV_POSITION; // システム用頂点座標
+    float4 normal : NORMAL; // 法線ベクトル
+    float4 vnormal : NORMAL1; 
+    float2 uv : TEXCOORD; // uv座標
 };
 
 Texture2D<float4> tex : register(t0); // テクスチャレジスタ0番
@@ -14,6 +15,8 @@ cbuffer cbuff0 : register(b0)
 {
     matrix world;
     matrix viewproj;
+    matrix view;
+    matrix proj;
 };
 
 cbuffer Material : register(b1)
