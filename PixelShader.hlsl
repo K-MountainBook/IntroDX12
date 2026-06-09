@@ -2,25 +2,27 @@
 
 float4 BasicPS(Output input) : SV_TARGET
 {
-    
     float3 light = normalize(float3(1, -1, 1));
-    float brightness = dot(-light, input.normal.xyz);
+    float3 lightColor = float3(1, 1, 1);
+    float diffuseB = dot(-light, input.normal);
     
+    float3 refLight = normalize(reflect(light, input.normal.xyz));
+    float3 specularB = pow(saturate(dot(refLight, -input.ray)), specular.a);
     
-    float2 normalUV = input.vnormal.xy;
-    normalUV = (normalUV + float2(1, -1)) * float2(0.5, -0.5);
+    float2 sphereMapUV = input.vnormal.xy;
+    sphereMapUV = (sphereMapUV + float2(1, -1)) * float2(0.5, -0.5);
     
-    float4 color = tex.Sample(smp, input.uv);
+    float4 texColor = tex.Sample(smp, input.uv);
     
-    return float4(brightness, brightness, brightness, 1)
-        // テクスチャが出るようになる
-        // * tex.Sample(smp, input.uv)
-        * diffuse // マテリアル
-        * tex.Sample(smp, input.uv) // テクスチャ
-        * sph.Sample(smp, normalUV) // スフィア
-        + spa.Sample(smp, normalUV) // スペキュラ
-        + float4(color.xyz * ambient * 0.3, 1); // 環境光
-    //return float4(tex.Sample(smp, input.uv));
-    // return float4(input.uv, 1, 1);
-    // return float4(1, 1, 0, 1);
+    // return float4(specularB * specular.rgb, 1);
+    
+    return max(
+        diffuseB
+        * diffuse
+        * texColor
+        * sph.Sample(smp, sphereMapUV)
+        + spa.Sample(smp, sphereMapUV) * texColor
+        + float4(specularB * specular.aaa, 1), float4(texColor * ambient, 1)
+);
+
 }
