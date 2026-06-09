@@ -162,7 +162,7 @@ struct Material
 //};
 
 // ビュー座標系
-XMFLOAT3 eye(0, 15, -10);
+XMFLOAT3 eye(0, 15, -15);
 XMFLOAT3 target(0, 15, 0);
 XMFLOAT3 up(0, 1, 0);
 
@@ -175,11 +175,12 @@ struct TexRGBA
 std::vector<TexRGBA> texturedata(256 * 256);
 
 // シェーダーにわたすための行列データ
-struct MatricesData {
+struct SceneData {
 	XMMATRIX world;		// モデルの座標
 	XMMATRIX viewproj;	// ビューとプロジェクション合成行列
 	XMMATRIX view;
 	XMMATRIX proj;
+	XMFLOAT3 eye;
 };
 
 // コンソールにデバッグ情報を表示
@@ -542,8 +543,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	FILE* fp = nullptr;
 
 
-	string strModelPath = "Model/巡音ルカ.pmd";
-	// string strModelPath = "Model/初音ミクmetal.pmd";
+	// string strModelPath = "Model/巡音ルカ.pmd";
+	string strModelPath = "Model/初音ミクmetal.pmd";
 	// string strModelPath = "Model/初音ミク.pmd";
 	fopen_s(&fp, strModelPath.c_str(), "rb");
 
@@ -1007,7 +1008,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	auto constHeapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	// 座標を入れるサイズが増えたのでバッファのサイズも合わせる
-	auto constResDescBuff = CD3DX12_RESOURCE_DESC::Buffer((sizeof(MatricesData) + 0xff) & ~0xff);
+	auto constResDescBuff = CD3DX12_RESOURCE_DESC::Buffer((sizeof(SceneData) + 0xff) & ~0xff);
 
 	_dev->CreateCommittedResource(
 		&constHeapProp,
@@ -1020,7 +1021,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 陰影が正しくつくように書き換え
 	//XMMATRIX* mapMatrix;
-	MatricesData* mapMatrix;
+	SceneData* mapMatrix;
 
 	//// 定数バッファへのデータのコピー
 	result = constBuff->Map(0, nullptr, (void**)&mapMatrix);
@@ -1029,6 +1030,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	mapMatrix->viewproj = viewMatrix * projMatrix;
 	mapMatrix->view = viewMatrix;
 	mapMatrix->proj = projMatrix;
+	mapMatrix->eye = eye;
 
 
 #pragma endregion
@@ -1211,6 +1213,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		if (strlen(pmdMaterials[i].texFilePath) == 0)
 		{
 			textureResources[i] = nullptr;
+
 		}
 		else {
 
@@ -1476,7 +1479,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_DESCRIPTOR_RANGE descTblRange[3] = {};
 
 	// テクスチャ用レジスタ１(t0) テクスチャ
-	descTblRange[0].NumDescriptors = 3;		// テクスチャの数（今回は1）
+	descTblRange[0].NumDescriptors = 3;		// テクスチャの数→テクスチャ、スフィアマップ、スペキュラ
 	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;		// 種類はテクスチャ
 	descTblRange[0].BaseShaderRegister = 0;				// テクスチャレジスタ番号0(t0)
 	descTblRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;	// とりあえず「連続したディスクリプタレンジが前の直後に来る」を指定
@@ -1598,7 +1601,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// レンダーターゲットの設定
 	gpipeline.NumRenderTargets = 1;				// 数は一つ
-	gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;	// 上記指定のレンダーターゲットに対して指定
+	gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;	// 上記指定のレンダーターゲットに対して指定
 
 	// アンチエイリアスの設定 とりあえず最低
 	gpipeline.SampleDesc.Count = 1;
@@ -1661,7 +1664,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 
-		angle += 0.01f;
+		// angle += 0.01f;
 		worldMatrix = XMMatrixRotationY(angle);
 		// matMatrixの型が変わったのでワールド座標だけ代入
 		//*mapMatrix = worldMatrix * viewMatrix * projMatrix;
